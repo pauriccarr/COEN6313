@@ -1,4 +1,4 @@
-name: Deploy to GKE
+name: Undeploy to GKE
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   id-token: write   # required for Workload Identity Federation
 
 jobs:
-  deploy:
+  undeploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
