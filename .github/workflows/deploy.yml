@@ -6,7 +6,19 @@ on:
     paths:
       - 'release/kubernetes-manifests.yaml'
   workflow_dispatch:
-
+    inputs:
+      agent_traffic_percent:
+        description: 'Percentage of traffic sent to AI agent'
+        required: true
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '10'
+          - '25'
+          - '50'
+          - '75'
+          - '100'
 permissions:
   contents: read
   id-token: write   # required for Workload Identity Federation
