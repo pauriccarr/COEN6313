@@ -438,12 +438,16 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        image: us-central1-docker.pkg.dev/google-samples/microservices-demo/cartservice:v0.10.4
+        image: ghcr.io/pauriccarr/cartservice-mongo-v1:latest  
         ports:
         - containerPort: 7070
         env:
-        - name: REDIS_ADDR
-          value: "redis-cart:6379"
+        - name: USE_MONGODB
+          value: "true"
+        - name: MONGODB_CONNECTION_STRING
+          value: "mongodb://mongodb-cart:27017"
+        - name: MONGODB_DATABASE_NAME
+          value: "cartdb"
         resources:
           requests:
             cpu: 200m
@@ -549,6 +553,72 @@ spec:
   - name: tcp-redis
     port: 6379
     targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-cart
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-cart
+  template:
+    metadata:
+      labels:
+        app: mongodb-cart
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:7.0
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-data
+          mountPath: /data/db
+        readinessProbe:
+          exec:
+            command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: mongo-data
+        persistentVolumeClaim:
+          claimName: mongodb-cart-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-cart-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-cart
+spec:
+  selector:
+    app: mongodb-cart
+  ports:
+  - port: 27017
+    targetPort: 27017
 ---
 apiVersion: apps/v1
 kind: Deployment
