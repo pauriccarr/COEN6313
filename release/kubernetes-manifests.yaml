@@ -445,7 +445,7 @@ spec:
         - name: USE_MONGODB
           value: "true"
         - name: MONGODB_CONNECTION_STRING
-          value: "mongodb://mongodb-cart:27017"
+          value: "mongodb://mongodb-cart:27017/?directConnection=true"
         - name: MONGODB_DATABASE_NAME
           value: "cartdb"
         resources:
