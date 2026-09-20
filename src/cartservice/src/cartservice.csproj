@@ -13,6 +13,11 @@
     <PackageReference Include="Google.Cloud.SecretManager.V1" Version="2.7.0" />
     <PackageReference Include="MongoDB.Driver" Version="2.24.0" />
   </ItemGroup>
+  <ItemGroup>
+    <TrimmerRootAssembly Include="MongoDB.Driver" />
+    <TrimmerRootAssembly Include="MongoDB.Bson" />
+    <TrimmerRootAssembly Include="MongoDB.Driver.Core" />
+  </ItemGroup>
 
   <ItemGroup>
     <Protobuf Include="protos\Cart.proto" GrpcServices="Both" />
