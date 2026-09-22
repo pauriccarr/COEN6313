@@ -50,9 +50,21 @@ jobs:
             esac
             kubectl apply -f "$f"
           done
-      
+     
       - name: Wait for rollout
         run: |
           kubectl rollout status deployment/grafana -n monitoring --timeout=180s
+
+          # Prometheus Operator needs a moment to reconcile the Prometheus CR
+          # into an actual StatefulSet before we can check its rollout status
+          echo "Waiting for prometheus-k8s StatefulSet to be created..."
+          for i in $(seq 1 30); do
+            if kubectl get statefulset/prometheus-k8s -n monitoring >/dev/null 2>&1; then
+              echo "found it"
+              break
+            fi
+            sleep 5
+          done
           kubectl rollout status statefulset/prometheus-k8s -n monitoring --timeout=180s
+
           kubectl rollout status statefulset/alertmanager-main -n monitoring --timeout=180s
