@@ -41,10 +41,10 @@ jobs:
 
       - name: Deploy Monitoring manifest
         run: |
-          kubectl apply --server-side -f manifests/setup 
+          kubectl apply --server-side -f release/kube-prometheus/manifests/setup 
           kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring
 
-          for f in manifests/*.yaml; do
+          for f in release/kube-prometheus/manifests/*.yaml; do
             case "$f" in
               *nodeExporter*) echo "skipping $f (blocked on Autopilot)"; continue ;;
             esac
