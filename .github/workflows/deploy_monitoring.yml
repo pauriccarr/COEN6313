@@ -1,0 +1,58 @@
+name: Deploy Monitoring to GKE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release/kube-prometheus/manifests/'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Install gke-gcloud-auth-plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+
+      - name: Deploy Monitoring manifest
+        run: |
+          kubectl apply --server-side -f manifests/setup 
+          kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring
+
+          for f in manifests/*.yaml; do
+            case "$f" in
+              *nodeExporter*) echo "skipping $f (blocked on Autopilot)"; continue ;;
+            esac
+            kubectl apply -n monitoring -f "$f"
+          done
+      
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/grafana -n monitoring --timeout=180s
+          kubectl rollout status statefulset/prometheus-k8s -n monitoring --timeout=180s
+          kubectl rollout status statefulset/alertmanager-main -n monitoring --timeout=180s
