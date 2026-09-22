@@ -30,8 +30,14 @@ namespace cartservice
             string spannerProjectId = Configuration["SPANNER_PROJECT"];
             string spannerConnectionString = Configuration["SPANNER_CONNECTION_STRING"];
             string alloyDBConnectionString = Configuration["ALLOYDB_PRIMARY_IP"];
+            string mongoConnectionString = Configuration["MONGODB_CONNECTION_STRING"];
 
-            if (!string.IsNullOrEmpty(redisAddress))
+            if (!string.IsNullOrEmpty(mongoConnectionString))
+            {
+                Console.WriteLine("Creating MongoDB cart store");
+                services.AddSingleton<ICartStore, MongoDBCartStore>();
+            }
+            else if (!string.IsNullOrEmpty(redisAddress))
             {
                 services.AddStackExchangeRedisCache(options =>
                 {
