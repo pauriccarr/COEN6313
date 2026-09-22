@@ -48,7 +48,7 @@ jobs:
             case "$f" in
               *nodeExporter*) echo "skipping $f (blocked on Autopilot)"; continue ;;
             esac
-            kubectl apply -n monitoring -f "$f"
+            kubectl apply -f "$f"
           done
       
       - name: Wait for rollout
