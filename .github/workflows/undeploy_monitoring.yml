@@ -12,7 +12,7 @@ permissions:
   id-token: write   # required for Workload Identity Federation
 
 jobs:
-  deploy:
+  undeploy_monitoring:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,4 +50,4 @@ jobs:
           done
 
           # 2. Then delete the namespace + CRDs
-          kubectl delete --server-side -f release/k8s-prometheus/manifests/setup --ignore-not-found=true
+          kubectl delete -f release/k8s-prometheus/manifests/setup --ignore-not-found=true
