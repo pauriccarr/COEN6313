@@ -181,8 +181,8 @@
 |---|---|---|---|---|
 | Recommendation Service v1 Analysis | jingyawang | Sep 21 | Sep 21 | Completed |
 | Agent v2 Design | jingyawang | Sep 21 | Sep 22 | Completed |
-| Model / Runtime / Tool Selection | jingyawang | Sep 22 | Sep 22 | In Progress |
-| Agentification Technical Plan & D2 Preparation | jingyawang | Sep 22 | Sep 23 | Not Started |
+| Model / Runtime / Tool Selection | jingyawang | Sep 22 | Sep 22 | Completed |
+| Agentification Technical Plan & D2 Preparation | jingyawang | Sep 22 | Sep 23 | In Progress |
 | Agent v2 Implementation | jingyawang | Sep 24 | Oct 6 | Not Started |
 | Agent v2 Testing | jingyawang | Sep 24 | Oct 6 | Not Started |
 
@@ -190,7 +190,7 @@
 
 | Task | Owner | Start Time | Due Time | Status |
 |---|---|---|---|---|
-| v1 / v2 Deployment | shared | TBD | TBD | Not Started |
+| v1 / v2 Deployment | shared | Sep 24 | Oct 6 | Not Started |
 | Canary Routing | shared | TBD | TBD | Not Started |
 | Traffic Splitting | shared | TBD | TBD | Not Started |
 | Promotion / Rollback | shared | TBD | TBD | Not Started |
@@ -200,10 +200,10 @@
 | Task | Owner | Start Time | Due Time | Status |
 |---|---|---|---|---|
 | Instrumentation / Telemetry | pauriccarr | Sep 24 | Oct 6 | In Progress |
-| Metrics Collection | TBD | TBD | TBD | TBD |
-| Google Cloud Monitoring | TBD | TBD | TBD | TBD |
-| Dashboard & Widgets | jingyawang | TBD | TBD | Not Started |
-| Cost Monitoring | TBD | TBD | TBD | TBD |
+| Metrics Collection | pauriccarr | Sep 24 | Oct 6 | In Progress |
+| Google Cloud Monitoring | pauriccarr | Sep 24 | Oct 6 | In Progress |
+| Dashboard & Widgets | pauriccarr | Sep 24 | Oct 6 | In Progress |
+| Cost Monitoring | pauriccarr | Sep 24 | Oct 6 | In Progress |
 
 ### Phase 6 — Experiment, Evaluation & Delivery
 
