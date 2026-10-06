@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"time"
+	"net/http"
 
 	"cloud.google.com/go/profiler"
 	"github.com/google/uuid"
@@ -38,11 +39,34 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+
+        "github.com/prometheus/client_golang/prometheus"
+        "github.com/prometheus/client_golang/prometheus/promauto"
+        "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
 	listenPort  = "5050"
 	usdCurrency = "USD"
+)
+
+var (
+    ordersPlaced = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "checkout_orders_placed_total",
+        Help: "Total number of successfully placed orders.",
+    }, []string{"currency"})
+
+    orderFailures = promauto.NewCounter(prometheus.CounterOpts{
+        Name: "checkout_orders_failed_total",
+        Help: "Total number of failed PlaceOrder calls.",
+    })
+
+    placeOrderDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+        Name:    "checkout_place_order_duration_seconds",
+        Help:    "Latency of the PlaceOrder RPC.",
+        Buckets: prometheus.DefBuckets,
+    })
 )
 
 var log *logrus.Logger
@@ -100,6 +124,15 @@ func main() {
 		log.Info("Profiling disabled.")
 	}
 
+	go func() {
+                mux := http.NewServeMux()
+                mux.Handle("/metrics", promhttp.Handler())
+                log.Info("starting metrics server on :9090")
+                if err := http.ListenAndServe(":9090", mux); err != nil {
+                        log.Errorf("metrics server failed: %v", err)
+                }
+        }()
+
 	port := listenPort
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")
@@ -144,6 +177,7 @@ func main() {
 	err = srv.Serve(lis)
 	log.Fatal(err)
 }
+
 
 func initStats() {
 	//TODO(arbrown) Implement OpenTelemetry stats
@@ -226,7 +260,16 @@ func (cs *checkoutService) Watch(req *healthpb.HealthCheckRequest, ws healthpb.H
 	return status.Errorf(codes.Unimplemented, "health check via Watch not implemented")
 }
 
-func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (*pb.PlaceOrderResponse, error) {
+func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (resp *pb.PlaceOrderResponse, err error) {
+        start := time.Now()
+        defer func() {
+            placeOrderDuration.Observe(time.Since(start).Seconds())
+            if err != nil {
+                orderFailures.Inc()
+            } else {
+                ordersPlaced.WithLabelValues(req.UserCurrency).Inc()
+            }
+        }() 	
 	log.Infof("[PlaceOrder] user_id=%q user_currency=%q", req.UserId, req.UserCurrency)
 
 	orderID, err := uuid.NewUUID()
@@ -274,7 +317,7 @@ func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderReq
 	} else {
 		log.Infof("order confirmation email sent to %q", req.Email)
 	}
-	resp := &pb.PlaceOrderResponse{Order: orderResult}
+	resp = &pb.PlaceOrderResponse{Order: orderResult}
 	return resp, nil
 }
 
