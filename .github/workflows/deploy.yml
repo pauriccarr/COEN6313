@@ -53,5 +53,6 @@ jobs:
 
       - name: Deploy manifest
         run: |
+          kubectl label namespace default istio.io/rev=asm-managed --overwrite
           kubectl apply -f release/kubernetes-manifests.yaml
           kubectl rollout status deployment --timeout=120s || true

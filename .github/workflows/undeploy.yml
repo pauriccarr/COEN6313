@@ -41,5 +41,5 @@ jobs:
 
       - name: Deploy manifest
         run: |
-          kubectl delete -f release/kubernetes-manifests.yaml
+          kubectl delete -f release/kubernetes-manifests.yaml --ignore-not-found=true
           kubectl rollout status deployment --timeout=120s || true
