@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: checkoutservice
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: ["default"]
+  selector:
+    matchLabels:
+      app: checkoutservice
+  podMetricsEndpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
