@@ -41,6 +41,8 @@ jobs:
 
       - name: Deploy Monitoring manifest
         run: |
+          kubectl create namespace monitoring
+          kubectl label namespace monitoring pod-security.kubernetes.io/warn=privileged  pod-security.kubernetes.io/warn-version=latest
           kubectl apply --server-side -f release/k8s-prometheus/manifests/setup 
           kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring
 
