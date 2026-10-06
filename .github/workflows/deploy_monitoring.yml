@@ -41,6 +41,7 @@ jobs:
 
       - name: Deploy Monitoring manifest
         run: |
+          kubectl create ns monitoring
           kubectl apply --server-side -f release/k8s-prometheus/manifests/setup 
           kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring
 
