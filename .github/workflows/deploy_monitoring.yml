@@ -44,7 +44,7 @@ jobs:
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
           kubectl label namespace monitoring pod-security.kubernetes.io/warn=privileged  pod-security.kubernetes.io/warn-version=latest  --overwrite
           kubectl apply --server-side -f release/k8s-prometheus/manifests/setup 
-          kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring
+          kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring --timeout=120s
 
           for f in release/k8s-prometheus/manifests/*.yaml; do
             case "$f" in
