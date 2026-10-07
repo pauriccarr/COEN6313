@@ -658,6 +658,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mongodb-cart
+  annotations:
+    cloud.google.com/neg: '{"ingress": false}'
 spec:
   selector:
     app: mongodb-cart
