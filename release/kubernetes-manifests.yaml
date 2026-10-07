@@ -608,6 +608,7 @@ spec:
   template:
     metadata:
       labels:
+        sidecar.istio.io/inject: "false"
         app: mongodb-cart
     spec:
       containers:
