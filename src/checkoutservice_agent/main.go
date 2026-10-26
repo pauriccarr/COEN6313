@@ -127,7 +127,7 @@ func main() {
 		PaymentSvcAddr:     mustGetEnv("PAYMENT_SERVICE_ADDR", "paymentservice:50051"),
 		EmailSvcAddr:       mustGetEnv("EMAIL_SERVICE_ADDR", "emailservice:5000"),
 		OllamaAddr:         mustGetEnv("OLLAMA_ADDR", "http://ollama:11434"),
-		OllamaModel:        mustGetEnv("OLLAMA_MODEL", "llama3"),
+		OllamaModel:        mustGetEnv("OLLAMA_MODEL", "llama3.1"),
 		FaultMode:          mustGetEnv("FAULT_MODE", "NONE"),
 	}
 
