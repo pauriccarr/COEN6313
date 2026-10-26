@@ -76,6 +76,9 @@ func (s *checkoutServiceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrd
 	if err != nil {
 		statusValue = "FAILED"
 		errorMsg = err.Error()
+		log.Errorf("[PlaceOrder] failed after %v: %v", time.Since(start), err)
+	} else {
+		log.Infof("[PlaceOrder] done in %v", time.Since(start))
 	}
 
 	orderID := ""
