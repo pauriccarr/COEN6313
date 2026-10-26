@@ -166,7 +166,36 @@ func fakeLLM(t *testing.T) http.HandlerFunc {
 	}
 }
 
+// lazyLLM answers right after get_cart, the way llama3.2:1b does, until it is
+// told the order is not complete; then it behaves like fakeLLM.
+func lazyLLM(t *testing.T) http.HandlerFunc {
+	good := fakeLLM(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Messages []ollama.Message `json:"messages"`
+		}
+		_ = json.Unmarshal(body, &req)
+		nudged, gotCart := false, false
+		for _, m := range req.Messages {
+			nudged = nudged || (m.Role == "user" && strings.Contains(m.Content, "not complete"))
+			gotCart = gotCart || (m.Role == "tool" && m.ToolName == "get_cart")
+		}
+		if gotCart && !nudged {
+			_ = json.NewEncoder(w).Encode(map[string]any{"done": true, "message": ollama.Message{
+				Role: "assistant", Content: `{"order_id":"x","shipping_tracking_id":"LLM-MADE-UP"}`}})
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		good(w, r)
+	}
+}
+
 func setup(t *testing.T) (*agent.CheckoutAgent, *fakes, string) {
+	return setupWith(t, fakeLLM(t))
+}
+
+func setupWith(t *testing.T, model http.HandlerFunc) (*agent.CheckoutAgent, *fakes, string) {
 	f := &fakes{carts: map[string][]*pb.CartItem{}}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -182,7 +211,7 @@ func setup(t *testing.T) (*agent.CheckoutAgent, *fakes, string) {
 	go s.Serve(lis)
 	t.Cleanup(s.Stop)
 
-	llm := httptest.NewServer(fakeLLM(t))
+	llm := httptest.NewServer(model)
 	t.Cleanup(llm.Close)
 
 	addr := lis.Addr().String()
@@ -220,6 +249,28 @@ func TestPlaceOrderHappyPath(t *testing.T) {
 	}
 	if len(f.charges) != 1 || len(f.carts["faultlab-checkout"]) != 0 || f.emails != 1 {
 		t.Errorf("charges=%d cart=%v emails=%d", len(f.charges), f.carts["faultlab-checkout"], f.emails)
+	}
+}
+
+func TestPlaceOrderNudgesEarlyAnswer(t *testing.T) {
+	t.Setenv("RESULTS_DIR", t.TempDir())
+	a, f, _ := setupWith(t, lazyLLM(t))
+	f.carts["faultlab-checkout"] = []*pb.CartItem{{ProductId: "OLJCESPC7Z", Quantity: 1}}
+	resp, steps, err := a.PlaceOrderTraced(context.Background(), &pb.PlaceOrderRequest{
+		UserId: "faultlab-checkout", UserCurrency: "USD", Email: "faultlab@example.com",
+		Address: &pb.Address{StreetAddress: "1600 Amphitheatre Parkway", City: "Mountain View", State: "CA",
+			Country: "United States", ZipCode: 94043},
+		CreditCard: &pb.CreditCardInfo{CreditCardNumber: "4432-8015-6152-0454", CreditCardCvv: 672,
+			CreditCardExpirationYear: 2039, CreditCardExpirationMonth: 1},
+	})
+	if err != nil {
+		t.Fatalf("PlaceOrder after an early answer: %v\nsteps: %+v", err, steps)
+	}
+	if got := resp.Order.ShippingTrackingId; got != "TRK-REAL-1" {
+		t.Errorf("tracking ID = %q, want the one from ship_order", got)
+	}
+	if len(f.charges) != 1 {
+		t.Errorf("charges = %d, want 1", len(f.charges))
 	}
 }
 

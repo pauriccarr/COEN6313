@@ -30,6 +30,9 @@ import (
 
 const maxIterations = 20
 
+// maxNudges is how many times an early final answer is sent back to the model.
+const maxNudges = 3
+
 // Config holds all addresses the agent needs.
 type Config struct {
 	CartSvcAddr        string
@@ -186,6 +189,7 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 		{Role: "user", Content: userMsg},
 	}
 	var steps []Step
+	nudges := 0
 
 	// ReAct loop
 	for i := 0; i < maxIterations; i++ {
@@ -201,6 +205,22 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 
 		// No tool calls → final answer
 		if len(reply.ToolCalls) == 0 {
+			// Small models often answer before doing every step. Point out
+			// what is missing and let the model continue, a few times at most.
+			if mode != "FM_3_2" {
+				if missing := missingSteps(steps); len(missing) > 0 && nudges < maxNudges {
+					nudges++
+					a.log.Warnf("[agent] order=%s answered early, still missing %s (nudge %d/%d)",
+						orderID, strings.Join(missing, ", "), nudges, maxNudges)
+					messages = append(messages, ollama.Message{
+						Role: "user",
+						Content: fmt.Sprintf("The order is not complete. You have not successfully called: %s. "+
+							"Call the next missing tool now. Do not answer until every step is done.",
+							strings.Join(missing, ", ")),
+					})
+					continue
+				}
+			}
 			a.log.Infof("[agent] final answer received for order=%s", orderID)
 			resp, err := parseOrderResponse(reply.Content, req)
 			if err != nil {
@@ -208,6 +228,7 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 			}
 			if mode != "FM_3_2" {
 				if err := verifyOrder(resp, orderID, steps); err != nil {
+					a.log.Errorf("[agent] order=%s rejected: %v", orderID, err)
 					return nil, steps, err
 				}
 			}
@@ -282,14 +303,19 @@ func (a *CheckoutAgent) dispatch(ctx context.Context, mode, toolName, args strin
 
 // verifyOrder checks the model's final answer against the tool calls that
 // really happened, and fills in the IDs from the tools rather than the model.
-func verifyOrder(resp *pb.PlaceOrderResponse, orderID string, steps []Step) error {
+// missingSteps lists the required tools that have not succeeded yet.
+func missingSteps(steps []Step) []string {
 	var missing []string
 	for _, name := range []string{"get_cart", "charge_card", "ship_order", "empty_cart"} {
 		if lastOK(steps, name) == nil {
 			missing = append(missing, name)
 		}
 	}
-	if len(missing) > 0 {
+	return missing
+}
+
+func verifyOrder(resp *pb.PlaceOrderResponse, orderID string, steps []Step) error {
+	if missing := missingSteps(steps); len(missing) > 0 {
 		return status.Errorf(codes.Internal, "checkout incomplete: %s not done", strings.Join(missing, ", "))
 	}
 	var shipped struct {
