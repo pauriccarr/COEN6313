@@ -1,0 +1,125 @@
+---
+# -----------------------------------------------------------------------
+# Ollama Deployment (shared in-cluster LLM inference server)
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          # Pull the model on startup
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "ollama pull llama3 || true"]
+      volumes:
+        - name: ollama-data
+          emptyDir: {}   # Replace with a PVC for persistence
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+spec:
+  selector:
+    app: ollama
+  ports:
+    - port: 11434
+      targetPort: 11434
+  type: ClusterIP
+---
+# -----------------------------------------------------------------------
+# Checkout Service (agent)
+# -----------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkoutservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkoutservice
+  template:
+    metadata:
+      labels:
+        app: checkoutservice
+    spec:
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: server
+          image: checkoutservice:agent  # build with: docker build -t checkoutservice:agent .
+          ports:
+            - containerPort: 5050
+          env:
+            # Downstream service addresses (match existing cluster DNS)
+            - name: CART_SERVICE_ADDR
+              value: "cartservice:7070"
+            - name: PRODUCT_CATALOG_SERVICE_ADDR
+              value: "productcatalogservice:3550"
+            - name: CURRENCY_SERVICE_ADDR
+              value: "currencyservice:7000"
+            - name: SHIPPING_SERVICE_ADDR
+              value: "shippingservice:50051"
+            - name: PAYMENT_SERVICE_ADDR
+              value: "paymentservice:50051"
+            - name: EMAIL_SERVICE_ADDR
+              value: "emailservice:8080"
+            # Ollama
+            - name: OLLAMA_ADDR
+              value: "http://ollama:11434"
+            - name: OLLAMA_MODEL
+              value: "llama3"
+            # Observability (optional)
+            - name: ENABLE_TRACING
+              value: "0"
+          readinessProbe:
+            grpc:
+              port: 5050
+          livenessProbe:
+            grpc:
+              port: 5050
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkoutservice
+spec:
+  selector:
+    app: checkoutservice
+  ports:
+    - port: 5050
+      targetPort: 5050
+  type: ClusterIP
