@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -61,6 +62,7 @@ type chatRequest struct {
 	Messages []Message        `json:"messages"`
 	Tools    []ToolDefinition `json:"tools,omitempty"`
 	Stream   bool             `json:"stream"`
+	Options  map[string]any   `json:"options,omitempty"`
 }
 
 // chatResponse is the body received from /api/chat.
@@ -78,6 +80,7 @@ type Client struct {
 	baseURL    string
 	model      string
 	httpClient *http.Client
+	options    map[string]any
 }
 
 // New creates a new Ollama client.
@@ -88,6 +91,7 @@ func New(baseURL, model string) *Client {
 		httpClient: &http.Client{
 			Timeout: 360 * time.Second,
 		},
+		options: defaultOptions(),
 	}
 }
 
@@ -99,6 +103,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []ToolDefin
 		Messages: messages,
 		Tools:    tools,
 		Stream:   false,
+		Options:  c.options,
 	}
 
 	data, err := json.Marshal(body)
@@ -157,4 +162,19 @@ func resultsDir() string {
 		return d
 	}
 	return "/results"
+}
+
+// defaultOptions caps the reply length and makes tool selection deterministic.
+// Small models on CPU otherwise ramble for hundreds of tokens per step.
+// OLLAMA_NUM_PREDICT overrides the cap (0 or less = no cap).
+func defaultOptions() map[string]any {
+	numPredict := 300
+	if v, err := strconv.Atoi(os.Getenv("OLLAMA_NUM_PREDICT")); err == nil {
+		numPredict = v
+	}
+	opts := map[string]any{"temperature": 0}
+	if numPredict > 0 {
+		opts["num_predict"] = numPredict
+	}
+	return opts
 }
