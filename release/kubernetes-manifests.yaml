@@ -340,6 +340,7 @@ spec:
         version: agent
     spec:
       serviceAccountName: checkoutservice
+      terminationGracePeriodSeconds: 5
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
@@ -354,20 +355,24 @@ spec:
                 - ALL
             privileged: false
             readOnlyRootFilesystem: true
-          image:  ghcr.io/pauriccarr/checkoutservice_metrics:latest
+          image: ghcr.io/pauriccarr/checkoutservice-agent:latest   # set to the image you push
           ports:
-          - containerPort: 5050
-          - name: metrics
-            containerPort: 9090
+          - name: grpc
+            containerPort: 5050
+          - name: http
+            containerPort: 8080
           readinessProbe:
             grpc:
               port: 5050
           livenessProbe:
-            grpc:
-              port: 5050
+            httpGet:
+              path: /health
+              port: 8080
           env:
           - name: PORT
             value: "5050"
+          - name: HTTP_PORT
+            value: "8080"
           - name: PRODUCT_CATALOG_SERVICE_ADDR
             value: "productcatalogservice:3550"
           - name: SHIPPING_SERVICE_ADDR
@@ -375,11 +380,30 @@ spec:
           - name: PAYMENT_SERVICE_ADDR
             value: "paymentservice:50051"
           - name: EMAIL_SERVICE_ADDR
-            value: "emailservice:5000"
+            value: "emailservice:5000"     # Service port 5000 -> pod 8080; not emailservice:8080
           - name: CURRENCY_SERVICE_ADDR
             value: "currencyservice:7000"
           - name: CART_SERVICE_ADDR
             value: "cartservice:7070"
+          - name: OLLAMA_ADDR
+            value: "http://ollama.pauric-test.svc.cluster.local:11434"
+          - name: OLLAMA_MODEL
+            value: "llama3"
+          - name: FAULT_MODE
+            value: "NONE"                 # fault for live traffic; /ui/run sets its own per test
+          - name: RESULTS_DIR
+            value: "/results"
+          # Optional order log. Create the Secret first if you want it:
+          #   kubectl create secret generic checkout-mongo --from-literal=uri='mongodb+srv://...'
+          - name: MONGO_URI
+            valueFrom:
+              secretKeyRef:
+                name: checkout-mongo
+                key: uri
+                optional: true
+          volumeMounts:
+          - name: results
+            mountPath: /results
           resources:
             requests:
               cpu: 100m
@@ -387,6 +411,27 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+      volumes:
+      - name: results
+        emptyDir: {}
+---
+# HTTP side of the agent pods only, for the FaultLab dashboard. The shared
+# checkoutservice Service also selects the original pods, which have no :8080.
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkoutservice-agent
+  labels:
+    app: checkoutservice
+spec:
+  type: ClusterIP
+  selector:
+    app: checkoutservice
+    version: agent
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
 ---
 apiVersion: v1
 kind: Service
@@ -434,11 +479,11 @@ spec:
     - destination:
         host: checkoutservice
         subset: original
-      weight: 80
+      weight: 90
     - destination:
-        host: recommendationservice
+        host: checkoutservice
         subset: agent
-      weight: 20
+      weight: 10
 ---
 apiVersion: apps/v1
 kind: Deployment

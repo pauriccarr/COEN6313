@@ -1,0 +1,4 @@
+e2e/
+*.md
+k8s-*.yaml
+checkout_request.json
