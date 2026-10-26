@@ -355,7 +355,7 @@ spec:
                 - ALL
             privileged: false
             readOnlyRootFilesystem: true
-          image: ghcr.io/pauriccarr/checkoutservice-agent:v2   # set to the image you push
+          image: ghcr.io/pauriccarr/checkoutservice-agent:v4   # set to the image you push
           ports:
           - name: grpc
             containerPort: 5050
@@ -386,9 +386,9 @@ spec:
           - name: CART_SERVICE_ADDR
             value: "cartservice:7070"
           - name: OLLAMA_ADDR
-            value: "http://ollama.pauric-test.svc.cluster.local:11434"
+            value: "http://ollama:11434"
           - name: OLLAMA_MODEL
-            value: "llama3"
+            value: "llama3.2:1b"
           - name: FAULT_MODE
             value: "NONE"                 # fault for live traffic; /ui/run sets its own per test
           - name: RESULTS_DIR
@@ -475,7 +475,9 @@ spec:
   hosts:
   - checkoutservice
   http:
-  - route:
+  - retries:
+      attempts: 0
+    route:
     - destination:
         host: checkoutservice
         subset: original

@@ -1,0 +1,359 @@
+From 4e9510ebcfa53ab39306184365ffaa2cf6add357 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 22:31:21 +0000
+Subject: [PATCH 1/4] Log checkout agent failures and disable Istio retries on
+ PlaceOrder
+
+The agent returned LLM errors to the caller without logging them, and
+Istio's default retry policy re-sent each failed PlaceOrder twice.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013uN2juY2o76kkxXKGA7SLx
+---
+ release/kubernetes-manifests.yaml | 6 +++++-
+ src/checkoutservice_agent/main.go | 3 +++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/release/kubernetes-manifests.yaml b/release/kubernetes-manifests.yaml
+index 16bb1ad..d19b035 100644
+--- a/release/kubernetes-manifests.yaml
++++ b/release/kubernetes-manifests.yaml
+@@ -475,7 +475,11 @@ spec:
+   hosts:
+   - checkoutservice
+   http:
+-  - route:
++  # No retries: PlaceOrder charges the card, so a retry can double-charge,
++  # and Istio's default (2 retries on "unavailable") triples every failed agent order.
++  - retries:
++      attempts: 0
++    route:
+     - destination:
+         host: checkoutservice
+         subset: original
+diff --git a/src/checkoutservice_agent/main.go b/src/checkoutservice_agent/main.go
+index 562d0f1..691b6a5 100644
+--- a/src/checkoutservice_agent/main.go
++++ b/src/checkoutservice_agent/main.go
+@@ -76,6 +76,9 @@ func (s *checkoutServiceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrd
+ 	if err != nil {
+ 		statusValue = "FAILED"
+ 		errorMsg = err.Error()
++		log.Errorf("[PlaceOrder] failed after %v: %v", time.Since(start), err)
++	} else {
++		log.Infof("[PlaceOrder] done in %v", time.Since(start))
+ 	}
+ 
+ 	orderID := ""
+-- 
+2.43.0
+
+
+From 1f99e5d53e2f4c665ec8e5b00839fdce3aba4a95 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 23:02:17 +0000
+Subject: [PATCH 2/4] Use llama3.1 and the in-namespace Ollama for the checkout
+ agent
+
+Ollama rejects tool calls for llama3 with 400 Bad Request; llama3.1
+supports them. Ollama now runs in the default namespace.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013uN2juY2o76kkxXKGA7SLx
+---
+ release/kubernetes-manifests.yaml | 4 ++--
+ src/checkoutservice_agent/main.go | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/release/kubernetes-manifests.yaml b/release/kubernetes-manifests.yaml
+index d19b035..822c38d 100644
+--- a/release/kubernetes-manifests.yaml
++++ b/release/kubernetes-manifests.yaml
+@@ -386,9 +386,9 @@ spec:
+           - name: CART_SERVICE_ADDR
+             value: "cartservice:7070"
+           - name: OLLAMA_ADDR
+-            value: "http://ollama.pauric-test.svc.cluster.local:11434"
++            value: "http://ollama:11434"
+           - name: OLLAMA_MODEL
+-            value: "llama3"
++            value: "llama3.1"             # llama3 has no tool-calling support in Ollama (400 Bad Request)
+           - name: FAULT_MODE
+             value: "NONE"                 # fault for live traffic; /ui/run sets its own per test
+           - name: RESULTS_DIR
+diff --git a/src/checkoutservice_agent/main.go b/src/checkoutservice_agent/main.go
+index 691b6a5..e4bca87 100644
+--- a/src/checkoutservice_agent/main.go
++++ b/src/checkoutservice_agent/main.go
+@@ -127,7 +127,7 @@ func main() {
+ 		PaymentSvcAddr:     mustGetEnv("PAYMENT_SERVICE_ADDR", "paymentservice:50051"),
+ 		EmailSvcAddr:       mustGetEnv("EMAIL_SERVICE_ADDR", "emailservice:5000"),
+ 		OllamaAddr:         mustGetEnv("OLLAMA_ADDR", "http://ollama:11434"),
+-		OllamaModel:        mustGetEnv("OLLAMA_MODEL", "llama3"),
++		OllamaModel:        mustGetEnv("OLLAMA_MODEL", "llama3.1"),
+ 		FaultMode:          mustGetEnv("FAULT_MODE", "NONE"),
+ 	}
+ 
+-- 
+2.43.0
+
+
+From 0f13587468a5b080f802adca8676c6e5c6cef1fb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 23:13:41 +0000
+Subject: [PATCH 3/4] Cap Ollama reply length and use temperature 0 in the
+ checkout agent
+
+llama3.2:1b on CPU generated ~700 tokens per step (~60s), which hit the
+loadgenerator's 60s request timeout. num_predict defaults to 300 and can
+be changed with OLLAMA_NUM_PREDICT.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013uN2juY2o76kkxXKGA7SLx
+---
+ src/checkoutservice_agent/ollama/client.go | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/src/checkoutservice_agent/ollama/client.go b/src/checkoutservice_agent/ollama/client.go
+index 95ab122..2797744 100644
+--- a/src/checkoutservice_agent/ollama/client.go
++++ b/src/checkoutservice_agent/ollama/client.go
+@@ -11,6 +11,7 @@ import (
+ 	"net/http"
+ 	"os"
+ 	"path/filepath"
++	"strconv"
+ 	"time"
+ )
+ 
+@@ -61,6 +62,7 @@ type chatRequest struct {
+ 	Messages []Message        `json:"messages"`
+ 	Tools    []ToolDefinition `json:"tools,omitempty"`
+ 	Stream   bool             `json:"stream"`
++	Options  map[string]any   `json:"options,omitempty"`
+ }
+ 
+ // chatResponse is the body received from /api/chat.
+@@ -78,6 +80,7 @@ type Client struct {
+ 	baseURL    string
+ 	model      string
+ 	httpClient *http.Client
++	options    map[string]any
+ }
+ 
+ // New creates a new Ollama client.
+@@ -88,6 +91,7 @@ func New(baseURL, model string) *Client {
+ 		httpClient: &http.Client{
+ 			Timeout: 360 * time.Second,
+ 		},
++		options: defaultOptions(),
+ 	}
+ }
+ 
+@@ -99,6 +103,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []ToolDefin
+ 		Messages: messages,
+ 		Tools:    tools,
+ 		Stream:   false,
++		Options:  c.options,
+ 	}
+ 
+ 	data, err := json.Marshal(body)
+@@ -158,3 +163,18 @@ func resultsDir() string {
+ 	}
+ 	return "/results"
+ }
++
++// defaultOptions caps the reply length and makes tool selection deterministic.
++// Small models on CPU otherwise ramble for hundreds of tokens per step.
++// OLLAMA_NUM_PREDICT overrides the cap (0 or less = no cap).
++func defaultOptions() map[string]any {
++	numPredict := 300
++	if v, err := strconv.Atoi(os.Getenv("OLLAMA_NUM_PREDICT")); err == nil {
++		numPredict = v
++	}
++	opts := map[string]any{"temperature": 0}
++	if numPredict > 0 {
++		opts["num_predict"] = numPredict
++	}
++	return opts
++}
+-- 
+2.43.0
+
+
+From ea0da5caceaac0eb7c27cf03f38866302f2e310d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 23:20:01 +0000
+Subject: [PATCH 4/4] Send early final answers back to the model with the
+ missing steps
+
+llama3.2:1b answers after get_cart; verification then rejected the order.
+The agent now tells the model which required tools have not succeeded
+and lets it continue, up to 3 times, before rejecting. Rejections are
+logged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013uN2juY2o76kkxXKGA7SLx
+---
+ src/checkoutservice_agent/agent/agent.go  | 30 ++++++++++++-
+ src/checkoutservice_agent/e2e/e2e_test.go | 53 ++++++++++++++++++++++-
+ 2 files changed, 80 insertions(+), 3 deletions(-)
+
+diff --git a/src/checkoutservice_agent/agent/agent.go b/src/checkoutservice_agent/agent/agent.go
+index 302dedf..c496517 100644
+--- a/src/checkoutservice_agent/agent/agent.go
++++ b/src/checkoutservice_agent/agent/agent.go
+@@ -30,6 +30,9 @@ import (
+ 
+ const maxIterations = 20
+ 
++// maxNudges is how many times an early final answer is sent back to the model.
++const maxNudges = 3
++
+ // Config holds all addresses the agent needs.
+ type Config struct {
+ 	CartSvcAddr        string
+@@ -186,6 +189,7 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
+ 		{Role: "user", Content: userMsg},
+ 	}
+ 	var steps []Step
++	nudges := 0
+ 
+ 	// ReAct loop
+ 	for i := 0; i < maxIterations; i++ {
+@@ -201,6 +205,22 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
+ 
+ 		// No tool calls → final answer
+ 		if len(reply.ToolCalls) == 0 {
++			// Small models often answer before doing every step. Point out
++			// what is missing and let the model continue, a few times at most.
++			if mode != "FM_3_2" {
++				if missing := missingSteps(steps); len(missing) > 0 && nudges < maxNudges {
++					nudges++
++					a.log.Warnf("[agent] order=%s answered early, still missing %s (nudge %d/%d)",
++						orderID, strings.Join(missing, ", "), nudges, maxNudges)
++					messages = append(messages, ollama.Message{
++						Role: "user",
++						Content: fmt.Sprintf("The order is not complete. You have not successfully called: %s. "+
++							"Call the next missing tool now. Do not answer until every step is done.",
++							strings.Join(missing, ", ")),
++					})
++					continue
++				}
++			}
+ 			a.log.Infof("[agent] final answer received for order=%s", orderID)
+ 			resp, err := parseOrderResponse(reply.Content, req)
+ 			if err != nil {
+@@ -208,6 +228,7 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
+ 			}
+ 			if mode != "FM_3_2" {
+ 				if err := verifyOrder(resp, orderID, steps); err != nil {
++					a.log.Errorf("[agent] order=%s rejected: %v", orderID, err)
+ 					return nil, steps, err
+ 				}
+ 			}
+@@ -282,14 +303,19 @@ func (a *CheckoutAgent) dispatch(ctx context.Context, mode, toolName, args strin
+ 
+ // verifyOrder checks the model's final answer against the tool calls that
+ // really happened, and fills in the IDs from the tools rather than the model.
+-func verifyOrder(resp *pb.PlaceOrderResponse, orderID string, steps []Step) error {
++// missingSteps lists the required tools that have not succeeded yet.
++func missingSteps(steps []Step) []string {
+ 	var missing []string
+ 	for _, name := range []string{"get_cart", "charge_card", "ship_order", "empty_cart"} {
+ 		if lastOK(steps, name) == nil {
+ 			missing = append(missing, name)
+ 		}
+ 	}
+-	if len(missing) > 0 {
++	return missing
++}
++
++func verifyOrder(resp *pb.PlaceOrderResponse, orderID string, steps []Step) error {
++	if missing := missingSteps(steps); len(missing) > 0 {
+ 		return status.Errorf(codes.Internal, "checkout incomplete: %s not done", strings.Join(missing, ", "))
+ 	}
+ 	var shipped struct {
+diff --git a/src/checkoutservice_agent/e2e/e2e_test.go b/src/checkoutservice_agent/e2e/e2e_test.go
+index 87ee920..ffbad7b 100644
+--- a/src/checkoutservice_agent/e2e/e2e_test.go
++++ b/src/checkoutservice_agent/e2e/e2e_test.go
+@@ -166,7 +166,36 @@ func fakeLLM(t *testing.T) http.HandlerFunc {
+ 	}
+ }
+ 
++// lazyLLM answers right after get_cart, the way llama3.2:1b does, until it is
++// told the order is not complete; then it behaves like fakeLLM.
++func lazyLLM(t *testing.T) http.HandlerFunc {
++	good := fakeLLM(t)
++	return func(w http.ResponseWriter, r *http.Request) {
++		body, _ := io.ReadAll(r.Body)
++		var req struct {
++			Messages []ollama.Message `json:"messages"`
++		}
++		_ = json.Unmarshal(body, &req)
++		nudged, gotCart := false, false
++		for _, m := range req.Messages {
++			nudged = nudged || (m.Role == "user" && strings.Contains(m.Content, "not complete"))
++			gotCart = gotCart || (m.Role == "tool" && m.ToolName == "get_cart")
++		}
++		if gotCart && !nudged {
++			_ = json.NewEncoder(w).Encode(map[string]any{"done": true, "message": ollama.Message{
++				Role: "assistant", Content: `{"order_id":"x","shipping_tracking_id":"LLM-MADE-UP"}`}})
++			return
++		}
++		r.Body = io.NopCloser(bytes.NewReader(body))
++		good(w, r)
++	}
++}
++
+ func setup(t *testing.T) (*agent.CheckoutAgent, *fakes, string) {
++	return setupWith(t, fakeLLM(t))
++}
++
++func setupWith(t *testing.T, model http.HandlerFunc) (*agent.CheckoutAgent, *fakes, string) {
+ 	f := &fakes{carts: map[string][]*pb.CartItem{}}
+ 	lis, err := net.Listen("tcp", "127.0.0.1:0")
+ 	if err != nil {
+@@ -182,7 +211,7 @@ func setup(t *testing.T) (*agent.CheckoutAgent, *fakes, string) {
+ 	go s.Serve(lis)
+ 	t.Cleanup(s.Stop)
+ 
+-	llm := httptest.NewServer(fakeLLM(t))
++	llm := httptest.NewServer(model)
+ 	t.Cleanup(llm.Close)
+ 
+ 	addr := lis.Addr().String()
+@@ -223,6 +252,28 @@ func TestPlaceOrderHappyPath(t *testing.T) {
+ 	}
+ }
+ 
++func TestPlaceOrderNudgesEarlyAnswer(t *testing.T) {
++	t.Setenv("RESULTS_DIR", t.TempDir())
++	a, f, _ := setupWith(t, lazyLLM(t))
++	f.carts["faultlab-checkout"] = []*pb.CartItem{{ProductId: "OLJCESPC7Z", Quantity: 1}}
++	resp, steps, err := a.PlaceOrderTraced(context.Background(), &pb.PlaceOrderRequest{
++		UserId: "faultlab-checkout", UserCurrency: "USD", Email: "faultlab@example.com",
++		Address: &pb.Address{StreetAddress: "1600 Amphitheatre Parkway", City: "Mountain View", State: "CA",
++			Country: "United States", ZipCode: 94043},
++		CreditCard: &pb.CreditCardInfo{CreditCardNumber: "4432-8015-6152-0454", CreditCardCvv: 672,
++			CreditCardExpirationYear: 2039, CreditCardExpirationMonth: 1},
++	})
++	if err != nil {
++		t.Fatalf("PlaceOrder after an early answer: %v\nsteps: %+v", err, steps)
++	}
++	if got := resp.Order.ShippingTrackingId; got != "TRK-REAL-1" {
++		t.Errorf("tracking ID = %q, want the one from ship_order", got)
++	}
++	if len(f.charges) != 1 {
++		t.Errorf("charges = %d, want 1", len(f.charges))
++	}
++}
++
+ func TestPlaceOrderRejectsMissingCard(t *testing.T) {
+ 	a, _, _ := setup(t)
+ 	if _, err := a.PlaceOrder(context.Background(), &pb.PlaceOrderRequest{UserId: "u"}); err == nil {
+-- 
+2.43.0
+
+

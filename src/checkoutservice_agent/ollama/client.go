@@ -62,6 +62,7 @@ type chatRequest struct {
 	Messages []Message        `json:"messages"`
 	Tools    []ToolDefinition `json:"tools,omitempty"`
 	Stream   bool             `json:"stream"`
+	Format   string           `json:"format,omitempty"`
 	Options  map[string]any   `json:"options,omitempty"`
 }
 
@@ -98,11 +99,22 @@ func New(baseURL, model string) *Client {
 // Chat sends messages to the model and returns the assistant reply.
 // It does NOT run the tool loop  that lives in the agent.
 func (c *Client) Chat(ctx context.Context, messages []Message, tools []ToolDefinition) (*Message, error) {
+	return c.chat(ctx, messages, tools, "")
+}
+
+// ChatJSON asks for a reply that is a single JSON object (Ollama's JSON mode),
+// with no tools offered.
+func (c *Client) ChatJSON(ctx context.Context, messages []Message) (*Message, error) {
+	return c.chat(ctx, messages, nil, "json")
+}
+
+func (c *Client) chat(ctx context.Context, messages []Message, tools []ToolDefinition, format string) (*Message, error) {
 	body := chatRequest{
 		Model:    c.model,
 		Messages: messages,
 		Tools:    tools,
 		Stream:   false,
+		Format:   format,
 		Options:  c.options,
 	}
 

@@ -1,6 +1,9 @@
 // Package agent implements the checkout agent.
-// It receives a PlaceOrder request, constructs a system+user prompt describing
-// the checkout task, then runs a ReAct loop:
+//
+// In planner mode (the default, planner.go) one LLM call chooses the plan and
+// code runs it. In react mode (AGENT_MODE=react) it receives a PlaceOrder
+// request, constructs a system+user prompt describing the checkout task, then
+// runs a ReAct loop:
 //
 //  1. Send messages + tool definitions to Ollama.
 //  2. If the model emits tool_calls, dispatch them to the real gRPC services.
@@ -45,6 +48,9 @@ type Config struct {
 	OllamaModel        string
 	// FaultMode is the default fault for live traffic (FAULT_MODE env).
 	FaultMode string
+	// Mode is "planner" (one LLM call picks the plan, code runs it; default)
+	// or "react" (the LLM picks every tool call step by step). AGENT_MODE env.
+	Mode string
 }
 
 // CheckoutAgent orchestrates the checkout flow via an LLM tool-use loop.
@@ -151,8 +157,8 @@ func (a *CheckoutAgent) PlaceOrder(ctx context.Context, req *pb.PlaceOrderReques
 	return resp, err
 }
 
-// PlaceOrderTraced runs the ReAct loop and also returns every tool step, for
-// the fault-injection runner.
+// PlaceOrderTraced runs the checkout (planner or ReAct, see Config.Mode) and
+// also returns every tool step, for the fault-injection runner.
 func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrderRequest) (*pb.PlaceOrderResponse, []Step, error) {
 	if req.GetAddress() == nil || req.GetCreditCard() == nil {
 		return nil, nil, status.Error(codes.InvalidArgument, "address and credit_card are required")
@@ -162,6 +168,9 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 	a.log.Infof("[agent] starting order=%s user=%s currency=%s fault=%s", orderID, req.UserId, req.UserCurrency, mode)
 
 	ctx = tools.WithCreditCard(ctx, req.CreditCard)
+	if a.cfg.Mode != "react" {
+		return a.placeOrderPlanned(ctx, req, orderID, mode)
+	}
 
 	// The card is deliberately not in the prompt; charge_card reads it from ctx.
 	userMsg := fmt.Sprintf(`Process checkout for:

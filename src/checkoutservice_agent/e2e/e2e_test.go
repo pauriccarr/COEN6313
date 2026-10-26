@@ -104,10 +104,17 @@ func fakeLLM(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Messages []ollama.Message `json:"messages"`
+			Format   string           `json:"format"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		if strings.Contains(req.Messages[1].Content, "4432") {
-			t.Errorf("card number leaked into the prompt")
+		for _, m := range req.Messages {
+			if strings.Contains(m.Content, "4432") {
+				t.Errorf("card number leaked into the prompt")
+			}
+		}
+		if req.Format == "json" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"done": true, "message": planReply(req.Messages)})
+			return
 		}
 		done := map[string]string{}
 		for _, m := range req.Messages {
@@ -166,6 +173,16 @@ func fakeLLM(t *testing.T) http.HandlerFunc {
 	}
 }
 
+// planReply plays a small model in planner mode: its first plan forgets
+// empty_cart; told what is wrong, it sends the full plan.
+func planReply(msgs []ollama.Message) ollama.Message {
+	plan := `{"plan":["get_cart","get_product","convert_currency","quote_shipping","charge_card","ship_order","send_order_confirmation"]}`
+	if strings.Contains(msgs[len(msgs)-1].Content, "not valid") {
+		plan = `{"plan":["get_cart","get_product","quote_shipping","convert_currency","charge_card","ship_order","empty_cart","send_order_confirmation"]}`
+	}
+	return ollama.Message{Role: "assistant", Content: plan}
+}
+
 // lazyLLM answers right after get_cart, the way llama3.2:1b does, until it is
 // told the order is not complete; then it behaves like fakeLLM.
 func lazyLLM(t *testing.T) http.HandlerFunc {
@@ -192,10 +209,10 @@ func lazyLLM(t *testing.T) http.HandlerFunc {
 }
 
 func setup(t *testing.T) (*agent.CheckoutAgent, *fakes, string) {
-	return setupWith(t, fakeLLM(t))
+	return setupWith(t, fakeLLM(t), "planner")
 }
 
-func setupWith(t *testing.T, model http.HandlerFunc) (*agent.CheckoutAgent, *fakes, string) {
+func setupWith(t *testing.T, model http.HandlerFunc, mode string) (*agent.CheckoutAgent, *fakes, string) {
 	f := &fakes{carts: map[string][]*pb.CartItem{}}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -218,7 +235,7 @@ func setupWith(t *testing.T, model http.HandlerFunc) (*agent.CheckoutAgent, *fak
 	log := logrus.New()
 	log.Out = io.Discard
 	a, err := agent.New(agent.Config{CartSvcAddr: addr, ProductCatalogAddr: addr, CurrencySvcAddr: addr,
-		ShippingSvcAddr: addr, PaymentSvcAddr: addr, EmailSvcAddr: addr, OllamaAddr: llm.URL, OllamaModel: "fake"}, log)
+		ShippingSvcAddr: addr, PaymentSvcAddr: addr, EmailSvcAddr: addr, OllamaAddr: llm.URL, OllamaModel: "fake", Mode: mode}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,8 +243,23 @@ func setupWith(t *testing.T, model http.HandlerFunc) (*agent.CheckoutAgent, *fak
 }
 
 func TestPlaceOrderHappyPath(t *testing.T) {
+	for _, mode := range []string{"planner", "react"} {
+		t.Run(mode, func(t *testing.T) { testHappyPath(t, fakeLLM(t), mode) })
+	}
+}
+
+// A model that never returns a usable plan: the standard order is used.
+func TestPlannerFallsBackToStandardPlan(t *testing.T) {
+	garbage := func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"done": true,
+			"message": ollama.Message{Role: "assistant", Content: "I will now process the checkout for you!"}})
+	}
+	testHappyPath(t, garbage, "planner")
+}
+
+func testHappyPath(t *testing.T, model http.HandlerFunc, mode string) {
 	t.Setenv("RESULTS_DIR", t.TempDir())
-	a, f, _ := setup(t)
+	a, f, _ := setupWith(t, model, mode)
 	f.carts["faultlab-checkout"] = []*pb.CartItem{{ProductId: "OLJCESPC7Z", Quantity: 1}, {ProductId: "66VCHSJNUP", Quantity: 2}}
 	resp, steps, err := a.PlaceOrderTraced(context.Background(), &pb.PlaceOrderRequest{
 		UserId: "faultlab-checkout", UserCurrency: "USD", Email: "faultlab@example.com",
@@ -248,13 +280,17 @@ func TestPlaceOrderHappyPath(t *testing.T) {
 		t.Errorf("tracking ID = %q, want the one from ship_order", got)
 	}
 	if len(f.charges) != 1 || len(f.carts["faultlab-checkout"]) != 0 || f.emails != 1 {
-		t.Errorf("charges=%d cart=%v emails=%d", len(f.charges), f.carts["faultlab-checkout"], f.emails)
+		t.Fatalf("charges=%d cart=%v emails=%d", len(f.charges), f.carts["faultlab-checkout"], f.emails)
+	}
+	// 3 x 19.99 + 8.99 shipping
+	if m := f.charges[0].Amount; m.Units != 68 || m.Nanos != 960000000 || m.CurrencyCode != "USD" {
+		t.Errorf("charged %v, want USD 68.96", m)
 	}
 }
 
 func TestPlaceOrderNudgesEarlyAnswer(t *testing.T) {
 	t.Setenv("RESULTS_DIR", t.TempDir())
-	a, f, _ := setupWith(t, lazyLLM(t))
+	a, f, _ := setupWith(t, lazyLLM(t), "react")
 	f.carts["faultlab-checkout"] = []*pb.CartItem{{ProductId: "OLJCESPC7Z", Quantity: 1}}
 	resp, steps, err := a.PlaceOrderTraced(context.Background(), &pb.PlaceOrderRequest{
 		UserId: "faultlab-checkout", UserCurrency: "USD", Email: "faultlab@example.com",

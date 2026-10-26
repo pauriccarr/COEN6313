@@ -129,6 +129,7 @@ func main() {
 		OllamaAddr:         mustGetEnv("OLLAMA_ADDR", "http://ollama:11434"),
 		OllamaModel:        mustGetEnv("OLLAMA_MODEL", "llama3.1"),
 		FaultMode:          mustGetEnv("FAULT_MODE", "NONE"),
+		Mode:               mustGetEnv("AGENT_MODE", "planner"),
 	}
 
 	// Order logging to MongoDB is optional: set MONGO_URI from a Secret to
@@ -172,8 +173,8 @@ func main() {
 	healthpb.RegisterHealthServer(srv, svc)
 	reflection.Register(srv)
 
-	log.Infof("starting gRPC server on :%s (agent mode, ollama=%s, model=%s, fault=%s)",
-		listenPort, cfg.OllamaAddr, cfg.OllamaModel, cfg.FaultMode)
+	log.Infof("starting gRPC server on :%s (agent mode=%s, ollama=%s, model=%s, fault=%s)",
+		listenPort, cfg.Mode, cfg.OllamaAddr, cfg.OllamaModel, cfg.FaultMode)
 
 	if err := srv.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)

@@ -14,8 +14,9 @@ import (
 //	FM_2_2  Fabricates instead of asking: get_product is not called and a
 //	        made-up product (price 0) is returned to the model.
 //	FM_3_1  Premature termination: reports success after the first round of
-//	        tool calls.
-//	FM_3_2  No verification: the model's final JSON is trusted as is.
+//	        tool calls (planner mode: after the first step of the plan).
+//	FM_3_2  No verification: the model's final JSON is trusted as is
+//	        (planner mode: the model's first plan is run unchecked).
 //	BL_SKIP_PAYMENT       charge_card is not called; a fake transaction ID is returned.
 //	BL_FAKE_TRACKING      ship_order is not called; a made-up tracking ID is returned.
 //	BL_CART_NOT_EMPTIED   empty_cart is not called but reports success.
