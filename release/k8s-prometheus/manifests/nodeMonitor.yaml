@@ -9,7 +9,14 @@ spec:
   selector:
     matchLabels:
       app: checkoutservice
+  # Copies the pod's version label (original / agent) onto every series.
+  podTargetLabels:
+  - version
   podMetricsEndpoints:
-  - port: metrics
+  - port: metrics      # v1 (checkoutservice), :9090
     path: /metrics
     interval: 15s
+  - port: http         # agent (checkoutservice-agent), :8080
+    path: /metrics
+    interval: 15s
+

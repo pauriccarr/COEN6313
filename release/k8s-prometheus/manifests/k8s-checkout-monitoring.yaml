@@ -1,0 +1,113 @@
+# Monitoring for the checkout canary: v1 (version: original) vs agent (version: agent).
+#
+# Needs kube-prometheus (deploy_monitoring.yml), which already watches PodMonitors and
+# PrometheusRules in every namespace and has read access to "default".
+#
+#   kubectl apply -f k8s-checkout-monitoring.yaml
+#
+# Then in Prometheus (kubectl -n monitoring port-forward svc/prometheus-k8s 9090) check
+# Status > Targets for podMonitor/monitoring/checkoutservice and podMonitor/default/checkout-mesh.
+---
+# App metrics come from your own PodMonitor "checkoutservice" in the monitoring namespace
+# (nodeMonitor.yaml), which scrapes v1 on port "metrics" and the agent on port "http".
+---
+# Istio sidecar metrics from the callers' side (frontend) and the checkout pods.
+# These see every response the frontend got, including timeouts and cancels.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: checkout-mesh
+  namespace: default
+spec:
+  selector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values: [frontend, checkoutservice]
+  podMetricsEndpoints:
+  - port: http-envoy-prom
+    path: /stats/prometheus
+    interval: 15s
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: istio_requests_total|istio_request_duration_milliseconds_.*
+      action: keep
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: checkout-canary
+  namespace: default
+spec:
+  groups:
+  - name: checkout-canary.rules
+    interval: 30s
+    rules:
+    # ---- Availability: share of PlaceOrder calls that did not return gRPC OK ----
+    # (seen by the frontend's sidecar, so timeouts and cancels count too)
+    - record: checkout:error_ratio:10m
+      expr: |
+        sum by (destination_version) (rate(istio_requests_total{reporter="source",destination_service_name="checkoutservice",grpc_response_status!="0"}[10m]))
+        /
+        sum by (destination_version) (rate(istio_requests_total{reporter="source",destination_service_name="checkoutservice"}[10m]))
+    # ---- Latency: p95 of PlaceOrder, seconds ----
+    - record: checkout:latency_p95_seconds:10m
+      expr: |
+        histogram_quantile(0.95, sum by (le, destination_version) (
+          rate(istio_request_duration_milliseconds_bucket{reporter="source",destination_service_name="checkoutservice"}[10m]))) / 1000
+    # ---- Correctness: share of accepted agent orders that passed every rule ----
+    - record: checkout:correct_ratio:30m
+      expr: |
+        sum(increase(checkout_agent_orders_checked_total{result="correct"}[30m]))
+        /
+        sum(increase(checkout_agent_orders_checked_total[30m]))
+    # ---- Cost inputs ----
+    - record: checkout:orders_per_hour
+      expr: |
+        sum by (version) (rate(checkout_orders_placed_total[30m])) * 3600
+    - record: checkout:llm_tokens_per_order
+      expr: |
+        sum(rate(checkout_agent_llm_tokens_total[30m])) / sum(rate(checkout_orders_placed_total{version="agent"}[30m]))
+    # Autopilot bills pod resource requests. Requested vCPU and GiB per version;
+    # the agent's share includes the Ollama pod it depends on.
+    - record: checkout:requested_vcpu
+      expr: |
+        label_replace(sum(kube_pod_container_resource_requests{namespace="default",resource="cpu",pod=~"checkoutservice-[a-z0-9]+-[a-z0-9]+"}), "version", "original", "", "")
+        or
+        label_replace(sum(kube_pod_container_resource_requests{namespace="default",resource="cpu",pod=~"checkoutservice-agent-.*|ollama-.*"}), "version", "agent", "", "")
+    - record: checkout:requested_memory_gib
+      expr: |
+        label_replace(sum(kube_pod_container_resource_requests{namespace="default",resource="memory",pod=~"checkoutservice-[a-z0-9]+-[a-z0-9]+"}) / 2^30, "version", "original", "", "")
+        or
+        label_replace(sum(kube_pod_container_resource_requests{namespace="default",resource="memory",pod=~"checkoutservice-agent-.*|ollama-.*"}) / 2^30, "version", "agent", "", "")
+    # USD per order. Prices: GKE Autopilot general-purpose pods, us-central1
+    # (0.0445 per vCPU-hour, 0.0049225 per GiB-hour). Check them against your billing report.
+    - record: checkout:cost_per_order_usd
+      expr: |
+        (checkout:requested_vcpu * 0.0445 + checkout:requested_memory_gib * 0.0049225)
+        / on (version) checkout:orders_per_hour
+
+  - name: checkout-canary.alerts
+    rules:
+    - alert: CheckoutAgentErrorRateHigh
+      expr: checkout:error_ratio:10m{destination_version="agent"} > 0.05
+      for: 5m
+      labels: {severity: critical}
+      annotations:
+        summary: "Agent checkout error rate {{ $value | humanizePercentage }} (rollback threshold 5%)"
+    - alert: CheckoutAgentLatencyHigh
+      expr: checkout:latency_p95_seconds:10m{destination_version="agent"} > 30
+      for: 10m
+      labels: {severity: critical}
+      annotations:
+        summary: "Agent checkout p95 {{ $value | humanizeDuration }} (rollback threshold 30s)"
+    - alert: CheckoutAgentIncorrectOrders
+      expr: checkout:correct_ratio:30m < 0.95
+      labels: {severity: critical}
+      annotations:
+        summary: "Only {{ $value | humanizePercentage }} of agent orders passed the correctness rules (rollback below 95%)"
+    - alert: CheckoutAgentMoneyError
+      expr: sum(increase(checkout_agent_correctness_checks_total{result="fail",rule=~"charge_total|paid_once"}[10m])) > 0
+      labels: {severity: critical}
+      annotations:
+        summary: "An agent order was charged the wrong amount or not exactly once (immediate rollback)"
