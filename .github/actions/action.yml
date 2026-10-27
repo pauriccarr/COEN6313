@@ -1,0 +1,31 @@
+name: GKE auth
+description: Log in to Google Cloud and get kubectl credentials for the cluster.
+inputs:
+  workload_identity_provider: {required: true}
+  service_account: {required: true}
+  project_id: {required: true}
+  cluster_name: {required: true}
+  location: {required: true}
+runs:
+  using: composite
+  steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+
+    - name: Set up gcloud
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ inputs.project_id }}
+
+    - name: Install gke-gcloud-auth-plugin
+      shell: bash
+      run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+    - name: Get GKE credentials
+      uses: google-github-actions/get-gke-credentials@v2
+      with:
+        cluster_name: ${{ inputs.cluster_name }}
+        location: ${{ inputs.location }}

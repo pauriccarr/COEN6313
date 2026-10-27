@@ -124,22 +124,22 @@ jobs:
           done
 
       # ---------------- 5. Tear down (runs even if a step above failed) ----------------
-      - name: Undeploy manifest
-        if: always()
-        run: kubectl delete -f release/kubernetes-manifests.yaml --ignore-not-found=true || true
-
-      - name: Undeploy Ollama
-        if: always()
-        run: kubectl delete -f "$OLLAMA_MANIFEST" --ignore-not-found=true || true
-
-      - name: Undeploy monitoring
-        if: always()
-        run: |
-          for f in release/k8s-prometheus/manifests/*.yaml; do
-            case "$f" in
-              *nodeExporter*) continue ;;
-            esac
-            kubectl delete -f "$f" --ignore-not-found=true || true
-          done
-          kubectl delete -f release/k8s-prometheus/manifests/setup --ignore-not-found=true || true
+#      - name: Undeploy manifest
+#        if: always()
+#        run: kubectl delete -f release/kubernetes-manifests.yaml --ignore-not-found=true || true
+#
+#      - name: Undeploy Ollama
+#        if: always()
+#        run: kubectl delete -f "$OLLAMA_MANIFEST" --ignore-not-found=true || true
+#
+#      - name: Undeploy monitoring
+#        if: always()
+#        run: |
+#          for f in release/k8s-prometheus/manifests/*.yaml; do
+#            case "$f" in
+#              *nodeExporter*) continue ;;
+#            esac
+#            kubectl delete -f "$f" --ignore-not-found=true || true
+#          done
+#          kubectl delete -f release/k8s-prometheus/manifests/setup --ignore-not-found=true || true
 
