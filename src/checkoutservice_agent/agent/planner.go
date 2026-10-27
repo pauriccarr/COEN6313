@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	pb "checkoutservice-agent/genproto"
+	"checkoutservice-agent/metrics"
 	"checkoutservice-agent/ollama"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -42,8 +43,8 @@ var planDeps = map[string][]string{
 	"convert_currency":        {"get_product"},
 	"quote_shipping":          {"get_cart"},
 	"charge_card":             {"convert_currency", "quote_shipping"},
-	"ship_order":              {"get_cart"},
-	"empty_cart":              {"get_cart"},
+	"ship_order":              {"get_cart", "charge_card"}, // never ship before payment
+	"empty_cart":              {"get_cart", "charge_card"},
 	"send_order_confirmation": {"ship_order", "convert_currency"},
 }
 
@@ -74,10 +75,16 @@ func (a *CheckoutAgent) askPlan(ctx context.Context, orderID, mode string) ([]st
 		plan = parsePlan(reply.Content)
 		a.log.Infof("[agent] order=%s plan (attempt %d): %s", orderID, attempt, strings.Join(plan, " -> "))
 		if mode == "FM_3_2" {
+			metrics.Plans.WithLabelValues("unchecked").Inc()
 			return plan, nil // no verification: run whatever the model said
 		}
 		problems := checkPlan(plan)
 		if len(problems) == 0 {
+			outcome := "valid"
+			if attempt > 1 {
+				outcome = "corrected"
+			}
+			metrics.Plans.WithLabelValues(outcome).Inc()
 			return plan, nil
 		}
 		a.log.Warnf("[agent] order=%s plan rejected: %s", orderID, strings.Join(problems, "; "))
@@ -85,6 +92,7 @@ func (a *CheckoutAgent) askPlan(ctx context.Context, orderID, mode string) ([]st
 			strings.Join(problems, "; ") + ". Reply with a corrected plan, JSON only."})
 	}
 	a.log.Warnf("[agent] order=%s plan still invalid, using the standard order", orderID)
+	metrics.Plans.WithLabelValues("fallback").Inc()
 	return ExpectedSteps, nil
 }
 

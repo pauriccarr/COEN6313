@@ -377,3 +377,47 @@ func TestFaultRunnerEndpoints(t *testing.T) {
 		}
 	}
 }
+
+func TestCorrectnessChecks(t *testing.T) {
+	t.Setenv("RESULTS_DIR", t.TempDir())
+	cases := map[string]string{ // fault mode -> rule that must fail ("" = all pass)
+		"NONE":                "",
+		"FM_2_2":              "charge_total",
+		"FM_1_3":              "paid_once",
+		"BL_SKIP_PAYMENT":     "charge_total",
+		"BL_FAKE_TRACKING":    "shipped_once",
+		"BL_CART_NOT_EMPTIED": "cart_emptied",
+		"BL_NO_CONFIRMATION":  "confirmation",
+	}
+	for mode, wantFail := range cases {
+		t.Run(mode, func(t *testing.T) {
+			a, f, _ := setup(t)
+			f.carts["faultlab-checkout"] = []*pb.CartItem{{ProductId: "OLJCESPC7Z", Quantity: 1}, {ProductId: "66VCHSJNUP", Quantity: 2}}
+			req := &pb.PlaceOrderRequest{
+				UserId: "faultlab-checkout", UserCurrency: "USD", Email: "faultlab@example.com",
+				Address: &pb.Address{StreetAddress: "1600 Amphitheatre Parkway", City: "Mountain View", State: "CA",
+					Country: "United States", ZipCode: 94043},
+				CreditCard: &pb.CreditCardInfo{CreditCardNumber: "4432-8015-6152-0454", CreditCardCvv: 672,
+					CreditCardExpirationYear: 2039, CreditCardExpirationMonth: 1},
+			}
+			ctx := agent.WithFaultMode(context.Background(), mode)
+			resp, steps, err := a.PlaceOrderTraced(ctx, req)
+			if err != nil {
+				t.Skipf("order rejected (fault caught by verification): %v", err)
+			}
+			failed := map[string]bool{}
+			for _, c := range a.CheckOrder(ctx, req, resp, steps) {
+				if !c.Pass {
+					failed[c.Rule] = true
+					t.Logf("%s failed: %s", c.Rule, c.Detail)
+				}
+			}
+			if wantFail == "" && len(failed) > 0 {
+				t.Errorf("baseline order failed checks: %v", failed)
+			}
+			if wantFail != "" && !failed[wantFail] {
+				t.Errorf("%s: rule %s did not fail (failed: %v)", mode, wantFail, failed)
+			}
+		})
+	}
+}

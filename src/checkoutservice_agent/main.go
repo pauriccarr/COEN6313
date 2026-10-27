@@ -11,6 +11,7 @@ import (
 	"checkoutservice-agent/agent"
 	"checkoutservice-agent/database"
 	pb "checkoutservice-agent/genproto"
+	"checkoutservice-agent/metrics"
 	"checkoutservice-agent/ui"
 
 	"github.com/sirupsen/logrus"
@@ -68,7 +69,8 @@ func (s *checkoutServiceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrd
 
 	start := time.Now()
 
-	resp, err := s.agent.PlaceOrder(ctx, req)
+	resp, steps, err := s.agent.PlaceOrderTraced(ctx, req)
+	metrics.PlaceOrderDuration.Observe(time.Since(start).Seconds())
 
 	statusValue := "SUCCESS"
 	errorMsg := ""
@@ -76,9 +78,17 @@ func (s *checkoutServiceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrd
 	if err != nil {
 		statusValue = "FAILED"
 		errorMsg = err.Error()
+		metrics.OrderFailures.Inc()
 		log.Errorf("[PlaceOrder] failed after %v: %v", time.Since(start), err)
 	} else {
+		metrics.OrdersPlaced.WithLabelValues(req.UserCurrency).Inc()
 		log.Infof("[PlaceOrder] done in %v", time.Since(start))
+		// Correctness: rule checks on the accepted order (metrics + log only).
+		for _, c := range s.agent.CheckOrder(ctx, req, resp, steps) {
+			if !c.Pass {
+				log.Warnf("[correctness] order=%s rule %s failed: %s", resp.GetOrder().GetOrderId(), c.Rule, c.Detail)
+			}
+		}
 	}
 
 	orderID := ""

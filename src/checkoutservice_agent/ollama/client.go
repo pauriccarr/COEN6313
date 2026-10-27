@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"checkoutservice-agent/metrics"
 )
 
 // ToolDefinition describes a tool the model can call.
@@ -135,7 +137,9 @@ func (c *Client) chat(ctx context.Context, messages []Message, tools []ToolDefin
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
+	metrics.LLMSeconds.Add(time.Since(startTime).Seconds())
 	if err != nil {
+		metrics.LLMCalls.WithLabelValues("error").Inc()
 		// DEBUG: Capture how long it took before failing
 		duration := time.Since(startTime)
 		return nil, fmt.Errorf("ollama request failed after %v: %w", duration, err)
@@ -147,11 +151,13 @@ func (c *Client) chat(ctx context.Context, messages []Message, tools []ToolDefin
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
+		metrics.LLMCalls.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("ollama non-200 status %d: %s", resp.StatusCode, string(b))
 	}
 
 	var cr chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		metrics.LLMCalls.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("decode chat response: %w", err)
 	}
 	inputTokens := cr.PromptEvalCount
@@ -159,6 +165,9 @@ func (c *Client) chat(ctx context.Context, messages []Message, tools []ToolDefin
 	totalTokens := inputTokens + outputTokens
 
 	fmt.Printf("TOKEN_METRICS input=%d output=%d total=%d\n", inputTokens, outputTokens, totalTokens)
+	metrics.LLMCalls.WithLabelValues("ok").Inc()
+	metrics.LLMTokens.WithLabelValues("input").Add(float64(inputTokens))
+	metrics.LLMTokens.WithLabelValues("output").Add(float64(outputTokens))
 
 	f, err := os.OpenFile(filepath.Join(resultsDir(), "token_log.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {

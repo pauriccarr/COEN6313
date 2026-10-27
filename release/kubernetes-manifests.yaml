@@ -101,7 +101,7 @@ spec:
   selector:
     matchLabels:
       app: loadgenerator
-  replicas: 1
+  replicas: 0
   template:
     metadata:
       labels:
@@ -355,7 +355,7 @@ spec:
                 - ALL
             privileged: false
             readOnlyRootFilesystem: true
-          image: ghcr.io/pauriccarr/checkoutservice-agent:v4   # set to the image you push
+          image: ghcr.io/pauriccarr/checkoutservice-agent:v5   # set to the image you push
           ports:
           - name: grpc
             containerPort: 5050

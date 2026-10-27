@@ -68,6 +68,7 @@ type Step struct {
 	OK     bool   `json:"ok"`
 	Faked  bool   `json:"faked,omitempty"`
 	Error  string `json:"error,omitempty"`
+	Args   string `json:"-"`
 	Result string `json:"-"`
 }
 
@@ -287,7 +288,7 @@ func (a *CheckoutAgent) dispatch(ctx context.Context, mode, toolName, args strin
 
 	if fake, ok := fakedResult(mode, toolName, args); ok {
 		a.log.Warnf("[agent] %s: faked %s", mode, toolName)
-		*steps = append(*steps, Step{Tool: toolName, OK: true, Faked: true, Result: fake})
+		*steps = append(*steps, Step{Tool: toolName, OK: true, Faked: true, Args: args, Result: fake})
 		return fake
 	}
 
@@ -298,7 +299,7 @@ func (a *CheckoutAgent) dispatch(ctx context.Context, mode, toolName, args strin
 	var result string
 	for r := 0; r < runs; r++ {
 		res, err := tool.Execute(ctx, args)
-		step := Step{Tool: toolName, OK: err == nil, Result: res}
+		step := Step{Tool: toolName, OK: err == nil, Args: args, Result: res}
 		if err != nil {
 			a.log.Warnf("[agent] tool %s error: %v", toolName, err)
 			step.Error = err.Error()
