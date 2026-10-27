@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OLLAMA_MANIFEST: release/ollama.yaml
+  OLLAMA_MANIFEST: release/ollama.yml
   OLLAMA_MODEL: llama3.2:1b
 
 jobs:
