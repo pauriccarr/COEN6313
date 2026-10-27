@@ -1,4 +1,4 @@
-name: Canary rollout (checkout agent)
+name: Canary rollout in Stages (checkout agent)
 
 # Runs only when started by hand (Actions > Canary rollout > Run workflow).
 # Each stage is its own job, so the run page shows them as boxes in a chain:
