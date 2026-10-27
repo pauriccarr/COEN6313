@@ -1,0 +1,208 @@
+name: Canary rollout (checkout agent)
+
+# Runs only when started by hand (Actions > Canary rollout > Run workflow).
+# Each stage is its own job, so the run page shows them as boxes in a chain:
+# monitoring > ollama > shop > canary steps (25 > 50 > 75 > 100%) > teardown.
+# The teardown jobs run even if an earlier job failed or the run was cancelled.
+on:
+  workflow_dispatch:
+    inputs:
+      wait_minutes:
+        description: 'Minutes to wait at each traffic step'
+        required: true
+        default: '1'
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+concurrency:
+  group: gke-cluster
+  cancel-in-progress: false
+
+env:
+  OLLAMA_MANIFEST: release/ollama.yml
+  OLLAMA_MODEL: llama3.2:1b
+
+jobs:
+  # ---------------- 1. Monitoring (same as deploy_monitoring.yml) ----------------
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Deploy monitoring
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace monitoring pod-security.kubernetes.io/warn=privileged pod-security.kubernetes.io/warn-version=latest --overwrite
+          kubectl apply --server-side -f release/k8s-prometheus/manifests/setup
+          kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring --timeout=120s
+
+          for f in release/k8s-prometheus/manifests/*.yaml; do
+            case "$f" in
+              *nodeExporter*) echo "skipping $f (blocked on Autopilot)"; continue ;;
+            esac
+            kubectl apply -f "$f"
+          done
+
+          echo "Waiting for prometheus-k8s StatefulSet to be created..."
+          for i in $(seq 1 30); do
+            kubectl get statefulset/prometheus-k8s -n monitoring >/dev/null 2>&1 && break
+            sleep 5
+          done
+          kubectl rollout status statefulset/prometheus-k8s -n monitoring --timeout=300s
+          kubectl rollout status deployment/grafana -n monitoring --timeout=300s
+
+  # ---------------- 2. Ollama ----------------
+  deploy-ollama:
+    needs: deploy-monitoring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Deploy Ollama
+        run: |
+          kubectl apply -f "$OLLAMA_MANIFEST"
+          kubectl rollout status deployment/ollama --timeout=600s
+          kubectl exec deploy/ollama -- ollama pull "$OLLAMA_MODEL"
+
+  # ---------------- 3. Shop (same as deploy.yml) ----------------
+  deploy-shop:
+    needs: deploy-ollama
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Deploy manifest
+        run: |
+          kubectl label namespace default istio.io/rev=asm-managed --overwrite
+          kubectl apply -f release/kubernetes-manifests.yaml
+          kubectl rollout status deployment --timeout=300s || true
+
+  # ---------------- 4. Traffic steps ----------------
+  canary:
+    needs: deploy-shop
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      WAIT_MINUTES: ${{ inputs.wait_minutes }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Move checkout traffic to the agent
+        run: |
+          # Prometheus, reached through a port-forward, for a snapshot after each step.
+          kubectl -n monitoring port-forward svc/prometheus-k8s 9090 >/dev/null 2>&1 &
+          sleep 5
+          query() {
+            curl -s http://localhost:9090/api/v1/query --data-urlencode "query=$1" \
+              | jq -r '.data.result[] | "\(.metric | to_entries | map("\(.key)=\(.value)") | join(",")) \(.value[1])"' || true
+          }
+          snapshot() {
+            w="${WAIT_MINUTES}m"
+            echo "--- requests in the last $w, by version and gRPC status (0 = OK)"
+            query "sum by (destination_version, grpc_response_status) (increase(istio_requests_total{reporter=\"source\",destination_service_name=\"checkoutservice\"}[$w]))"
+            echo "--- p95 latency in seconds"
+            query "histogram_quantile(0.95, sum by (le, destination_version) (rate(istio_request_duration_milliseconds_bucket{reporter=\"source\",destination_service_name=\"checkoutservice\"}[$w]))) / 1000"
+            echo "--- agent orders checked (correct / incorrect)"
+            query "sum by (result) (increase(checkout_agent_orders_checked_total[$w]))"
+            echo "--- cost per order, USD"
+            query "checkout:cost_per_order_usd"
+          }
+
+          for agent in 25 50 75 100; do
+            original=$((100 - agent))
+            echo "===== original $original% / agent $agent%"
+            kubectl patch virtualservice checkoutservice --type=json -p "[
+              {\"op\":\"replace\",\"path\":\"/spec/http/0/route/0/weight\",\"value\":$original},
+              {\"op\":\"replace\",\"path\":\"/spec/http/0/route/1/weight\",\"value\":$agent}]"
+            sleep $((WAIT_MINUTES * 60))
+            snapshot
+          done
+
+  # ---------------- 5. Tear down (always runs) ----------------
+  undeploy-shop:
+    needs: canary
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Undeploy manifest
+        run: kubectl delete -f release/kubernetes-manifests.yaml --ignore-not-found=true || true
+
+  undeploy-ollama:
+    needs: undeploy-shop
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Undeploy Ollama
+        run: kubectl delete -f "$OLLAMA_MANIFEST" --ignore-not-found=true || true
+
+  undeploy-monitoring:
+    needs: undeploy-ollama
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GKE auth
+        uses: ./.github/actions/gke-auth
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+      - name: Undeploy monitoring
+        run: |
+          for f in release/k8s-prometheus/manifests/*.yaml; do
+            case "$f" in
+              *nodeExporter*) continue ;;
+            esac
+            kubectl delete -f "$f" --ignore-not-found=true || true
+          done
+          kubectl delete -f release/k8s-prometheus/manifests/setup --ignore-not-found=true || true
