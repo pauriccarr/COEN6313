@@ -10,6 +10,7 @@ import (
 
 	"checkoutservice-agent/agent"
 	"checkoutservice-agent/database"
+	"checkoutservice-agent/faultlab"
 	pb "checkoutservice-agent/genproto"
 	"checkoutservice-agent/metrics"
 	"checkoutservice-agent/ui"
@@ -158,10 +159,27 @@ func main() {
 	}
 	defer checkoutAgent.Close()
 
-	uiSrv, err := ui.New(checkoutAgent, cfg.CartSvcAddr, log)
-	if err != nil {
-		log.Fatalf("failed to create fault UI: %v", err)
+	// FAULTLAB_RUNNER picks what the /ui fault suite runs against: "live"
+	// (default: this agent, the real services and Ollama) or "mock" (a second
+	// agent wired to in-process fake services and a fake model; fast, no cost).
+	var runner *faultlab.Runner
+	if mustGetEnv("FAULTLAB_RUNNER", "live") == "mock" {
+		mock, err := faultlab.StartMock()
+		if err != nil {
+			log.Fatalf("failed to start fault mock: %v", err)
+		}
+		defer mock.Close()
+		runner, err = mock.Runner(nil)
+		if err != nil {
+			log.Fatalf("failed to create mock fault runner: %v", err)
+		}
+	} else {
+		runner, err = faultlab.Live(checkoutAgent, cfg.CartSvcAddr, mustGetEnv("FAULTLAB_CURRENCY", "USD"))
+		if err != nil {
+			log.Fatalf("failed to create fault runner: %v", err)
+		}
 	}
+	uiSrv := ui.New(runner, log)
 	go func() {
 		log.Infof("starting HTTP server on :%s (/health, /ui)", httpPort)
 		if err := http.ListenAndServe(":"+httpPort, uiSrv.Handler()); err != nil {

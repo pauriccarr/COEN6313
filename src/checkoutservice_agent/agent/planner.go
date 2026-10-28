@@ -155,6 +155,10 @@ func (a *CheckoutAgent) placeOrderPlanned(ctx context.Context, req *pb.PlaceOrde
 	if err != nil {
 		return nil, nil, err
 	}
+	if mode == "FM_1_2" {
+		plan = reorderPlan(plan)
+		a.log.Warnf("[agent] FM_1_2: order=%s plan changed to %s", orderID, strings.Join(plan, " -> "))
+	}
 	var steps []Step
 	st := &checkoutState{products: map[string]*pb.Product{}, prices: map[string]*pb.Money{}}
 
@@ -166,6 +170,7 @@ func (a *CheckoutAgent) placeOrderPlanned(ctx context.Context, req *pb.PlaceOrde
 		// FM_3_1: report success after the first step of the plan.
 		if mode == "FM_3_1" && i == 0 {
 			a.log.Warnf("[agent] FM_3_1: terminating early for order=%s", orderID)
+			trackerFrom(ctx).infect("FINAL_ANSWER", "reported success after the first step of the plan")
 			return &pb.PlaceOrderResponse{Order: &pb.OrderResult{
 				OrderId:         orderID,
 				ShippingAddress: req.Address,
@@ -181,11 +186,8 @@ func (a *CheckoutAgent) placeOrderPlanned(ctx context.Context, req *pb.PlaceOrde
 		ShippingAddress:    req.Address,
 		Items:              st.orderItems(req.UserCurrency),
 	}}
-	if mode != "FM_3_2" {
-		if err := verifyOrder(resp, orderID, steps); err != nil {
-			a.log.Errorf("[agent] order=%s rejected: %v", orderID, err)
-			return nil, steps, err
-		}
+	if err := a.verify(ctx, mode, resp, orderID, steps); err != nil {
+		return nil, steps, err
 	}
 	a.log.Infof("[agent] order=%s completed: %d steps", orderID, len(steps))
 	return resp, steps, nil

@@ -652,3 +652,7 @@ func normalizeOrKeep(input string) string {
 	}
 	return input
 }
+
+// Normalize applies the same LLM-argument fixes as the tools themselves (see
+// normalizeValue), or returns the input unchanged if it is not JSON.
+func Normalize(input string) string { return normalizeOrKeep(input) }

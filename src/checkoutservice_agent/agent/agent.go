@@ -64,12 +64,16 @@ type CheckoutAgent struct {
 
 // Step is one tool call the agent made (or was faked by a fault mode).
 type Step struct {
-	Tool   string `json:"tool"`
-	OK     bool   `json:"ok"`
-	Faked  bool   `json:"faked,omitempty"`
-	Error  string `json:"error,omitempty"`
-	Args   string `json:"-"`
-	Result string `json:"-"`
+	Tool  string `json:"tool"`
+	OK    bool   `json:"ok"`
+	Faked bool   `json:"faked,omitempty"`
+	// Tampered is set when a fault mode changed the call's arguments or result.
+	Tampered bool   `json:"tampered,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Args     string `json:"-"`
+	Result   string `json:"-"`
+	// Raw is what the service really returned, when a fault mode changed it.
+	Raw string `json:"-"`
 }
 
 // New creates a CheckoutAgent, wiring up all downstream gRPC tool clients.
@@ -159,7 +163,8 @@ func (a *CheckoutAgent) PlaceOrder(ctx context.Context, req *pb.PlaceOrderReques
 }
 
 // PlaceOrderTraced runs the checkout (planner or ReAct, see Config.Mode) and
-// also returns every tool step, for the fault-injection runner.
+// also returns every tool step, for the fault-injection runner. LKW
+// checkpoints and the RIP record go to the Tracker in ctx (see WithTracker).
 func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrderRequest) (*pb.PlaceOrderResponse, []Step, error) {
 	if req.GetAddress() == nil || req.GetCreditCard() == nil {
 		return nil, nil, status.Error(codes.InvalidArgument, "address and credit_card are required")
@@ -168,10 +173,34 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 	orderID := uuid.New().String()
 	a.log.Infof("[agent] starting order=%s user=%s currency=%s fault=%s", orderID, req.UserId, req.UserCurrency, mode)
 
-	ctx = tools.WithCreditCard(ctx, req.CreditCard)
-	if a.cfg.Mode != "react" {
-		return a.placeOrderPlanned(ctx, req, orderID, mode)
+	tr := trackerFrom(ctx)
+	if tr == nil {
+		ctx, tr = WithTracker(ctx)
 	}
+	tr.checkpoint("TASK_START", "order "+orderID)
+	ctx = tools.WithCreditCard(ctx, req.CreditCard)
+
+	var resp *pb.PlaceOrderResponse
+	var steps []Step
+	var err error
+	if a.cfg.Mode != "react" {
+		resp, steps, err = a.placeOrderPlanned(ctx, req, orderID, mode)
+	} else {
+		resp, steps, err = a.placeOrderReact(ctx, req, orderID, mode)
+	}
+	if err == nil {
+		tr.checkpoint("FINAL_ANSWER", "order "+orderID+" accepted")
+	}
+	if rip := tr.RIP(); rip.InfectionPoint != "" {
+		a.log.Warnf("[RIP] order=%s fault=%s infection=%s depth=%d last_known_well=%s: %s",
+			orderID, mode, rip.InfectionPoint, rip.PropagationDepth, rip.LastKnownWell, rip.InfectionDetail)
+	}
+	return resp, steps, err
+}
+
+// placeOrderReact is the ReAct loop: the model picks every tool call.
+func (a *CheckoutAgent) placeOrderReact(ctx context.Context, req *pb.PlaceOrderRequest, orderID, mode string) (*pb.PlaceOrderResponse, []Step, error) {
+	tr := trackerFrom(ctx)
 
 	// The card is deliberately not in the prompt; charge_card reads it from ctx.
 	userMsg := fmt.Sprintf(`Process checkout for:
@@ -194,8 +223,12 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 		req.Address.Country,
 		req.Address.ZipCode,
 	)
+	prompt := systemPrompt
+	if mode == "FM_1_2" {
+		prompt += "\n\nImportant: ship the order (ship_order) first, before you charge the card."
+	}
 	messages := []ollama.Message{
-		{Role: "system", Content: systemPrompt},
+		{Role: "system", Content: prompt},
 		{Role: "user", Content: userMsg},
 	}
 	var steps []Step
@@ -236,11 +269,8 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 			if err != nil {
 				return nil, steps, err
 			}
-			if mode != "FM_3_2" {
-				if err := verifyOrder(resp, orderID, steps); err != nil {
-					a.log.Errorf("[agent] order=%s rejected: %v", orderID, err)
-					return nil, steps, err
-				}
+			if err := a.verify(ctx, mode, resp, orderID, steps); err != nil {
+				return nil, steps, err
 			}
 			return resp, steps, nil
 		}
@@ -264,6 +294,7 @@ func (a *CheckoutAgent) PlaceOrderTraced(ctx context.Context, req *pb.PlaceOrder
 		// tool calls, without the remaining steps or any verification.
 		if mode == "FM_3_1" {
 			a.log.Warnf("[agent] FM_3_1: terminating early for order=%s", orderID)
+			tr.infect("FINAL_ANSWER", "reported success after the first round of tool calls")
 			return &pb.PlaceOrderResponse{Order: &pb.OrderResult{
 				OrderId:         orderID,
 				ShippingAddress: req.Address,
@@ -286,10 +317,23 @@ func (a *CheckoutAgent) dispatch(ctx context.Context, mode, toolName, args strin
 		return jsonError(errMsg)
 	}
 
+	tr := trackerFrom(ctx)
+	checkpoint := toolCheckpoint[toolName]
+
 	if fake, ok := fakedResult(mode, toolName, args); ok {
 		a.log.Warnf("[agent] %s: faked %s", mode, toolName)
+		tr.infect(checkpoint, toolName+" was not called; its result was made up")
 		*steps = append(*steps, Step{Tool: toolName, OK: true, Faked: true, Args: args, Result: fake})
 		return fake
+	}
+
+	if mode == "FM_1_2" && toolName == "ship_order" && lastOK(*steps, "charge_card") == nil {
+		tr.infect(checkpoint, "order shipped before the card was charged")
+	}
+	sent, why := tamperArgs(mode, toolName, args)
+	if why != "" {
+		a.log.Warnf("[agent] %s: %s", mode, why)
+		tr.infect(checkpoint, why)
 	}
 
 	runs := 1
@@ -298,17 +342,43 @@ func (a *CheckoutAgent) dispatch(ctx context.Context, mode, toolName, args strin
 	}
 	var result string
 	for r := 0; r < runs; r++ {
-		res, err := tool.Execute(ctx, args)
-		step := Step{Tool: toolName, OK: err == nil, Args: args, Result: res}
+		if r > 0 {
+			tr.infect(checkpoint, toolName+" ran twice")
+		}
+		res, err := tool.Execute(ctx, sent)
+		step := Step{Tool: toolName, OK: err == nil, Tampered: why != "", Args: sent, Result: res}
 		if err != nil {
 			a.log.Warnf("[agent] tool %s error: %v", toolName, err)
 			step.Error = err.Error()
 			res = jsonError(err.Error())
+		} else {
+			if changed, why := tamperResult(mode, toolName, res); why != "" {
+				a.log.Warnf("[agent] %s: %s", mode, why)
+				tr.infect(checkpoint, why)
+				step.Tampered, step.Raw, step.Result, res = true, res, changed, changed
+			}
+			tr.checkpoint(checkpoint, "")
 		}
 		*steps = append(*steps, step)
 		result = res
 	}
 	return result
+}
+
+// verify runs verifyOrder unless the fault mode skips it (FM_3_2), and
+// records the ORDER_VERIFIED checkpoint.
+func (a *CheckoutAgent) verify(ctx context.Context, mode string, resp *pb.PlaceOrderResponse, orderID string, steps []Step) error {
+	tr := trackerFrom(ctx)
+	if mode == "FM_3_2" {
+		tr.infect("ORDER_VERIFIED", "final answer accepted without verification")
+		return nil
+	}
+	if err := verifyOrder(resp, orderID, steps); err != nil {
+		a.log.Errorf("[agent] order=%s rejected: %v", orderID, err)
+		return err
+	}
+	tr.checkpoint("ORDER_VERIFIED", "")
+	return nil
 }
 
 // verifyOrder checks the model's final answer against the tool calls that

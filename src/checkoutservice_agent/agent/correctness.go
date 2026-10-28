@@ -14,6 +14,11 @@ package agent
 //	               ID in the response is the one it returned
 //	cart_emptied   the user's cart is empty after the order
 //	confirmation   the confirmation email was really sent
+//	items_match_cart  the order has exactly the items and quantities the cart
+//	               service returned (its real answer, even if a fault changed
+//	               what the agent saw)
+//	ship_address   the order was shipped to the address in the request
+//	paid_before_ship  the card was charged before the order was shipped
 
 import (
 	"context"
@@ -23,6 +28,7 @@ import (
 
 	pb "checkoutservice-agent/genproto"
 	"checkoutservice-agent/metrics"
+	"checkoutservice-agent/tools"
 )
 
 // CheckResult is the outcome of one rule.
@@ -35,6 +41,22 @@ type CheckResult struct {
 // CheckOrder runs every rule on an accepted order, records the results in the
 // metrics and returns them.
 func (a *CheckoutAgent) CheckOrder(ctx context.Context, req *pb.PlaceOrderRequest, resp *pb.PlaceOrderResponse, steps []Step) []CheckResult {
+	results := a.Check(ctx, req, resp, steps)
+	correct := "correct"
+	for _, r := range results {
+		result := "pass"
+		if !r.Pass {
+			result, correct = "fail", "incorrect"
+		}
+		metrics.CorrectnessChecks.WithLabelValues(r.Rule, result).Inc()
+	}
+	metrics.OrdersCorrect.WithLabelValues(correct).Inc()
+	return results
+}
+
+// Check runs every rule on an accepted order without touching the metrics
+// (the fault runner uses it, so test orders do not count as live traffic).
+func (a *CheckoutAgent) Check(ctx context.Context, req *pb.PlaceOrderRequest, resp *pb.PlaceOrderResponse, steps []Step) []CheckResult {
 	var results []CheckResult
 	add := func(rule string, pass bool, detail string, args ...any) {
 		r := CheckResult{Rule: rule, Pass: pass}
@@ -94,16 +116,52 @@ func (a *CheckoutAgent) CheckOrder(ctx context.Context, req *pb.PlaceOrderReques
 
 	add("confirmation", len(real["send_order_confirmation"]) > 0, "no confirmation email sent")
 
-	correct := "correct"
-	for _, r := range results {
-		result := "pass"
-		if !r.Pass {
-			result, correct = "fail", "incorrect"
+	if carts := real["get_cart"]; len(carts) > 0 {
+		raw := carts[0].Result
+		if carts[0].Raw != "" {
+			raw = carts[0].Raw
 		}
-		metrics.CorrectnessChecks.WithLabelValues(r.Rule, result).Inc()
+		var cart pb.Cart
+		_ = json.Unmarshal([]byte(raw), &cart)
+		want, got := quantities(cart.Items), map[string]int32{}
+		for _, oi := range order.GetItems() {
+			got[oi.GetItem().GetProductId()] += oi.GetItem().GetQuantity()
+		}
+		add("items_match_cart", fmt.Sprint(want) == fmt.Sprint(got), "cart had %v, order has %v", want, got)
+	} else {
+		add("items_match_cart", false, "the cart was never read")
 	}
-	metrics.OrdersCorrect.WithLabelValues(correct).Inc()
+
+	if ships := real["ship_order"]; len(ships) > 0 {
+		var to pb.Address
+		_ = json.Unmarshal([]byte(tools.Normalize(ships[0].Args)), &to)
+		want := req.GetAddress()
+		add("ship_address", to.City == want.City && to.ZipCode == want.ZipCode && to.StreetAddress == want.StreetAddress,
+			"shipped to %s, %s %d; customer is at %s, %s %d", to.StreetAddress, to.City, to.ZipCode,
+			want.StreetAddress, want.City, want.ZipCode)
+	}
+
+	charged, shipped := -1, -1
+	for i, s := range steps {
+		if s.OK && !s.Faked && s.Tool == "charge_card" && charged < 0 {
+			charged = i
+		}
+		if s.OK && !s.Faked && s.Tool == "ship_order" && shipped < 0 {
+			shipped = i
+		}
+	}
+	if charged >= 0 && shipped >= 0 {
+		add("paid_before_ship", charged < shipped, "order shipped before the card was charged")
+	}
 	return results
+}
+
+func quantities(items []*pb.CartItem) map[string]int32 {
+	out := map[string]int32{}
+	for _, it := range items {
+		out[it.GetProductId()] += it.GetQuantity()
+	}
+	return out
 }
 
 // expectedTotal recomputes what the order should cost from the catalog, the

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"checkoutservice-agent/agent"
+	"checkoutservice-agent/faultlab"
 	pb "checkoutservice-agent/genproto"
 	"checkoutservice-agent/ollama"
 	"checkoutservice-agent/ui"
@@ -322,11 +323,11 @@ func TestFaultRunnerEndpoints(t *testing.T) {
 	a, _, addr := setup(t)
 	log := logrus.New()
 	log.Out = io.Discard
-	srv, err := ui.New(a, addr, log)
+	runner, err := faultlab.Live(a, addr, "USD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httptest.NewServer(srv.Handler())
+	h := httptest.NewServer(ui.New(runner, log).Handler())
 	defer h.Close()
 
 	for _, p := range []string{"/health", "/ui", "/ui/modes", "/ui/status", "/ui/results"} {
@@ -357,7 +358,7 @@ func TestFaultRunnerEndpoints(t *testing.T) {
 	}
 
 	var res struct {
-		Results []ui.Row `json:"results"`
+		Results []faultlab.Row `json:"results"`
 	}
 	r, _ = http.Get(h.URL + "/ui/results")
 	_ = json.NewDecoder(r.Body).Decode(&res)
@@ -388,6 +389,13 @@ func TestCorrectnessChecks(t *testing.T) {
 		"BL_FAKE_TRACKING":    "shipped_once",
 		"BL_CART_NOT_EMPTIED": "cart_emptied",
 		"BL_NO_CONFIRMATION":  "confirmation",
+		"FM_1_2":              "paid_before_ship",
+		"FM_2_5":              "charge_total",
+		"BL_WRONG_TOTAL":      "charge_total",
+		"BL_WRONG_CURRENCY":   "charge_total",
+		"BL_ITEM_DROPPED":     "items_match_cart",
+		"BL_DUPLICATE_ITEM":   "items_match_cart",
+		"BL_WRONG_ADDRESS":    "ship_address",
 	}
 	for mode, wantFail := range cases {
 		t.Run(mode, func(t *testing.T) {
@@ -419,5 +427,39 @@ func TestCorrectnessChecks(t *testing.T) {
 				t.Errorf("%s: rule %s did not fail (failed: %v)", mode, wantFail, failed)
 			}
 		})
+	}
+}
+
+// Fault modes record LKW checkpoints and the infection in react mode too.
+func TestFaultTrackingReact(t *testing.T) {
+	t.Setenv("RESULTS_DIR", t.TempDir())
+	a, _, addr := setupWith(t, fakeLLM(t), "react")
+	r, err := faultlab.Live(a, addr, "USD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{ // mode -> infection point
+		"NONE":             "",
+		"BL_WRONG_TOTAL":   "PAYMENT_CHARGED",
+		"BL_WRONG_ADDRESS": "ORDER_SHIPPED",
+		"BL_SKIP_PAYMENT":  "PAYMENT_CHARGED",
+		"FM_2_5":           "SHIPPING_QUOTED",
+		"FM_3_2":           "ORDER_VERIFIED",
+	}
+	for mode, infection := range cases {
+		row := r.RunOne(mode)
+		t.Logf("%-18s infection=%-16q depth=%d lkw=%s lost=%v %s", mode, row.InfectionPoint,
+			row.PropagationDepth, row.LastKnownWell, row.StepsLost, row.Outcome)
+		// The scripted react model lists one item in its final answer, so the
+		// correctness rules fail even for NONE; only the order itself must go through.
+		if !row.OrderAccepted {
+			t.Errorf("%s: %s", mode, row.Outcome)
+		}
+		if row.InfectionPoint != infection {
+			t.Errorf("%s: infection %q, want %q", mode, row.InfectionPoint, infection)
+		}
+		if len(row.LKW) == 0 || row.LKW[0].Step != "TASK_START" {
+			t.Errorf("%s: no LKW checkpoints: %+v", mode, row.LKW)
+		}
 	}
 }
