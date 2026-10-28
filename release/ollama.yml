@@ -37,7 +37,16 @@ spec:
             ollama pull llama3.2:1b
             wait
         ports:
-        - containerPort: 11434
+          - containerPort: 11434
+        env:
+          - name: OLLAMA_FLASH_ATTENTION
+            value: "1"
+          - name: OLLAMA_KV_CACHE_TYPE
+            value: "q8_0"
+          - name: OLLAMA_KEEP_ALIVE
+            value: "2h"
+          - name: OLLAMA_NUM_PARALLEL
+            value: "2"
         volumeMounts:
         - name: ollama-data
           mountPath: /root/.ollama
