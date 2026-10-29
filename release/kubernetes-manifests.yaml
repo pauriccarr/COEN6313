@@ -355,7 +355,7 @@ spec:
                 - ALL
             privileged: false
             readOnlyRootFilesystem: true
-          image: ghcr.io/pauriccarr/checkoutservice-agent:v6   # set to the image you push
+          image: ghcr.io/pauriccarr/checkoutservice-agent:v6-faults   # set to the image you push
           ports:
           - name: grpc
             containerPort: 5050
