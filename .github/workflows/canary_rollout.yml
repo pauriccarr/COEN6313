@@ -49,6 +49,11 @@ on:
         default: '50'
         type: choice
         options: ['25', '50', '75', '100']
+      teardown:
+        description: 'Delete everything at the end (untick to keep the cluster up for debugging)'
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -261,15 +266,15 @@ jobs:
 
       # ---------------- 5. Tear down (runs even if a step above failed) ----------------
       - name: Undeploy manifest
-        if: always()
+        if: always() && inputs.teardown
         run: kubectl delete -f release/kubernetes-manifests.yaml --ignore-not-found=true || true
 
       - name: Undeploy Ollama
-        if: always()
+        if: always() && inputs.teardown
         run: kubectl delete -f "$OLLAMA_MANIFEST" --ignore-not-found=true || true
 
       - name: Undeploy monitoring
-        if: always()
+        if: always() && inputs.teardown
         run: |
           for f in release/k8s-prometheus/manifests/*.yaml; do
             case "$f" in
