@@ -1,0 +1,340 @@
+name: Canary rollout (checkout agent)
+
+# Runs only when started by hand (Actions > Canary rollout > Run workflow).
+# Brings up monitoring, Ollama and the shop, moves checkout traffic to the agent
+# in steps (25 > 50 > 75 > 100%), then tears everything down again.
+# After each step the agent's metrics are checked against the rollback thresholds.
+# On a breach all traffic goes back to the original and the run fails; if every
+# step passes, the run summary reports a successful migration.
+#
+# Rollback demo: pick a fault_mode and the step to inject it at. The agent then
+# misbehaves from that step on, a threshold breaks and the canary rolls back.
+# In that case a rollback is the expected result and the run passes.
+on:
+  workflow_dispatch:
+    inputs:
+      wait_minutes:
+        description: 'Minutes to wait at each traffic step'
+        required: true
+        default: '1'
+      min_agent_requests:
+        description: 'Fewest agent checkouts a step needs before it can pass'
+        required: true
+        default: '1'
+      agent_image:
+        description: 'Agent image (empty = the one in the manifest). Faults need v6-faults.'
+        required: false
+        default: 'ghcr.io/pauriccarr/checkoutservice-agent:v6-faults'
+      fault_mode:
+        description: 'Fault to inject for the rollback demo (NONE = normal migration)'
+        required: true
+        default: 'NONE'
+        type: choice
+        options:
+          - NONE
+          - BL_WRONG_TOTAL
+          - BL_WRONG_CURRENCY
+          - BL_SKIP_PAYMENT
+          - BL_ITEM_DROPPED
+          - BL_DUPLICATE_ITEM
+          - BL_WRONG_ADDRESS
+          - BL_FAKE_TRACKING
+          - BL_CART_NOT_EMPTIED
+          - BL_NO_CONFIRMATION
+          - FM_1_3
+          - FM_2_5
+      fault_at_percent:
+        description: 'Agent share at which the fault is switched on'
+        required: true
+        default: '50'
+        type: choice
+        options: ['25', '50', '75', '100']
+      teardown:
+        description: 'Delete everything at the end (untick to keep the cluster up for debugging)'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+concurrency:
+  group: gke-cluster
+  cancel-in-progress: false
+
+env:
+  OLLAMA_MANIFEST: release/ollama.yml
+  OLLAMA_MODEL: llama3.2:1b
+  # Rollback thresholds (the monitoring criteria).
+  MAX_ERROR_RATIO: '0.05'     # availability: non-OK gRPC incl. timeouts
+  MAX_P95_SECONDS: '30'       # latency
+  MIN_CORRECT_RATIO: '0.95'   # correctness: share of agent orders passing every rule
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Install gke-gcloud-auth-plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_REGION }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # ---------------- 1. Monitoring (same as deploy_monitoring.yml) ----------------
+      - name: Deploy monitoring
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace monitoring pod-security.kubernetes.io/warn=privileged pod-security.kubernetes.io/warn-version=latest --overwrite
+          kubectl apply --server-side -f release/k8s-prometheus/manifests/setup
+          kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring --timeout=120s
+
+          for f in release/k8s-prometheus/manifests/*.yaml; do
+            case "$f" in
+              *nodeExporter*) echo "skipping $f (blocked on Autopilot)"; continue ;;
+            esac
+            kubectl apply -f "$f"
+          done
+
+          echo "Waiting for prometheus-k8s StatefulSet to be created..."
+          for i in $(seq 1 30); do
+            kubectl get statefulset/prometheus-k8s -n monitoring >/dev/null 2>&1 && break
+            sleep 5
+          done
+          kubectl rollout status statefulset/prometheus-k8s -n monitoring --timeout=300s
+          kubectl rollout status deployment/grafana -n monitoring --timeout=300s
+
+      # ---------------- 2. Ollama ----------------
+      - name: Deploy Ollama
+        run: |
+          kubectl apply -f "$OLLAMA_MANIFEST"
+          kubectl rollout status deployment/ollama --timeout=600s
+          kubectl exec deploy/ollama -- ollama pull "$OLLAMA_MODEL"
+          # Load the model into memory now, so the first agent order isn't a cold start.
+          kubectl exec deploy/ollama -- ollama run "$OLLAMA_MODEL" "Say OK" >/dev/null || true
+
+      # ---------------- 3. Shop (same as deploy.yml) ----------------
+      - name: Deploy manifest
+        env:
+          AGENT_IMAGE: ${{ inputs.agent_image }}
+        run: |
+          kubectl label namespace default istio.io/rev=asm-managed --overwrite
+          kubectl apply -f release/kubernetes-manifests.yaml
+          if [ -n "$AGENT_IMAGE" ]; then
+            kubectl set image deploy/checkoutservice-agent server="$AGENT_IMAGE"
+          fi
+          kubectl set env deploy/checkoutservice-agent FAULT_MODE=NONE
+          kubectl rollout status deployment --timeout=300s || true
+
+      - name: Check Istio sidecars
+        run: |
+          # The traffic split and the Istio metrics need a sidecar in every pod. Pods
+          # that started before the mesh was ready have none, so restart those once.
+          missing() {
+            kubectl get pods -l app=checkoutservice -o json | jq -r '.items[]
+              | select(any((.spec.containers + (.spec.initContainers // []))[]; .name == "istio-proxy") | not) | .metadata.name'
+            kubectl get pods -l app=frontend -o json | jq -r '.items[]
+              | select(any((.spec.containers + (.spec.initContainers // []))[]; .name == "istio-proxy") | not) | .metadata.name'
+          }
+          if [ -n "$(missing)" ]; then
+            echo "Pods without a sidecar: $(missing | tr '\n' ' ')- restarting them"
+            kubectl rollout restart deploy/frontend deploy/checkoutservice deploy/checkoutservice-agent
+            kubectl rollout status deploy/frontend deploy/checkoutservice deploy/checkoutservice-agent --timeout=300s
+          fi
+          if [ -n "$(missing)" ]; then
+            echo "::warning title=No Istio sidecars::$(missing | tr '\n' ' ')have no sidecar. The canary will use the app's own metrics, and the weights may not apply. Check: gcloud container fleet mesh describe"
+          fi
+          kubectl get pods -l 'app in (frontend,checkoutservice)'
+
+      # ---------------- 4. Traffic steps, each one gated on the metrics ----------------
+      - name: Move checkout traffic to the agent
+        env:
+          WAIT_MINUTES: ${{ inputs.wait_minutes }}
+          MIN_AGENT_REQUESTS: ${{ inputs.min_agent_requests }}
+          FAULT_MODE: ${{ inputs.fault_mode }}
+          FAULT_AT: ${{ inputs.fault_at_percent }}
+        run: |
+          # Prometheus, reached through a port-forward.
+          kubectl -n monitoring port-forward svc/prometheus-k8s 9090 >/dev/null 2>&1 &
+          sleep 5
+          w="${WAIT_MINUTES}m"
+          SEL='reporter="source",destination_service_name="checkoutservice"'
+
+          # One number from Prometheus, or "NaN" when there is no data.
+          value() {
+            curl -s http://localhost:9090/api/v1/query --data-urlencode "query=$1" \
+              | jq -r '.data.result[0].value[1] // "NaN"' 2>/dev/null || echo NaN
+          }
+          # awk does the float comparisons; NaN never passes.
+          gt() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a == a + 0 && a > b) }'; }
+          lt() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a == a + 0 && a < b) }'; }
+          pct() { awk -v a="$1" 'BEGIN { if (a == a + 0) printf "%.1f%%", a * 100; else print "no data" }'; }
+          num() { awk -v a="$1" 'BEGIN { if (a == a + 0) printf "%.2f", a; else print "no data" }'; }
+
+          set_weights() {
+            kubectl patch virtualservice checkoutservice --type=json -p "[
+              {\"op\":\"replace\",\"path\":\"/spec/http/0/route/0/weight\",\"value\":$((100 - $1))},
+              {\"op\":\"replace\",\"path\":\"/spec/http/0/route/1/weight\",\"value\":$1}]"
+          }
+
+          demo=false; [ "$FAULT_MODE" != "NONE" ] && demo=true
+          {
+            echo "## Checkout canary"
+            echo
+            $demo && echo "**Rollback demo:** fault \`$FAULT_MODE\` switched on at $FAULT_AT%. Expected result: the canary rolls back." && echo
+            echo "Thresholds: errors ≤ $(pct $MAX_ERROR_RATIO), p95 ≤ ${MAX_P95_SECONDS}s, correct ≥ $(pct $MIN_CORRECT_RATIO), no money errors. Window: $w per step."
+            echo
+            echo "| Agent share | Fault | Agent requests | Error rate (agent / original) | p95 s (agent / original) | Correct | Money errors | Cost/order USD (agent / original) | Result |"
+            echo "|---|---|---|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for agent in 25 50 75 100; do
+            echo "===== original $((100 - agent))% / agent $agent%"
+            fault="NONE"
+            if $demo && [ "$agent" -ge "$FAULT_AT" ]; then
+              fault="$FAULT_MODE"
+              if [ "$agent" -eq "$FAULT_AT" ]; then
+                echo "Injecting $FAULT_MODE into the agent"
+                kubectl set env deploy/checkoutservice-agent FAULT_MODE="$FAULT_MODE"
+                kubectl rollout status deploy/checkoutservice-agent --timeout=180s
+              fi
+            fi
+            snap() {   # current counter values, "0" when a series doesn't exist yet
+              for q in \
+                "sum(istio_requests_total{$SEL,destination_version=\"agent\"})" \
+                "sum(istio_requests_total{$SEL,destination_version=\"agent\",grpc_response_status!=\"0\"})" \
+                "sum(istio_requests_total{$SEL,destination_version=\"original\"})" \
+                "sum(istio_requests_total{$SEL,destination_version=\"original\",grpc_response_status!=\"0\"})" \
+                "sum(checkout_orders_placed_total{version=\"agent\"})" \
+                "sum(checkout_orders_failed_total{version=\"agent\"})" \
+                "sum(checkout_orders_placed_total{version=\"original\"})" \
+                "sum(checkout_orders_failed_total{version=\"original\"})" \
+                "sum(checkout_agent_orders_checked_total{result=\"correct\"})" \
+                "sum(checkout_agent_orders_checked_total)" \
+                "sum(checkout_agent_correctness_checks_total{result=\"fail\",rule=~\"charge_total|paid_once\"})"; do
+                v=$(value "$q"); [ "$v" = "NaN" ] && v=0; printf '%s ' "$v"
+              done
+            }
+            # end - start per counter; a counter that went down was reset (pod restart).
+            delta() { awk -v a="$1" -v b="$2" 'BEGIN { d = b - a; if (d < 0) d = b; print d }'; }
+            ratio() { awk -v a="$1" -v b="$2" 'BEGIN { if (b > 0) print a / b; else print "NaN" }'; }
+
+            set_weights $agent
+            read -r -a s0 <<< "$(snap)"
+            sleep $((WAIT_MINUTES * 60))
+            read -r -a s1 <<< "$(snap)"
+            d=(); for i in "${!s0[@]}"; do d[$i]=$(delta "${s0[$i]}" "${s1[$i]}"); done
+
+            if gt "${d[0]}" 0 || gt "${d[2]}" 0; then
+              source="istio"
+              reqs=${d[0]}; err=$(ratio "${d[1]}" "${d[0]}"); err_v1=$(ratio "${d[3]}" "${d[2]}")
+              p95=$(value "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{$SEL,destination_version=\"agent\"}[$w]))) / 1000")
+              p95_v1=$(value "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{$SEL,destination_version=\"original\"}[$w]))) / 1000")
+            else
+              # No Istio data (no sidecars or not scraped): use the services' own metrics.
+              source="app"
+              reqs=$(awk -v a="${d[4]}" -v b="${d[5]}" 'BEGIN { print a + b }')
+              err=$(ratio "${d[5]}" "$reqs")
+              tot_v1=$(awk -v a="${d[6]}" -v b="${d[7]}" 'BEGIN { print a + b }')
+              err_v1=$(ratio "${d[7]}" "$tot_v1")
+              p95=$(value "histogram_quantile(0.95, sum by (le) (rate(checkout_place_order_duration_seconds_bucket{version=\"agent\"}[$w])))")
+              p95_v1=$(value "histogram_quantile(0.95, sum by (le) (rate(checkout_place_order_duration_seconds_bucket{version=\"original\"}[$w])))")
+            fi
+            correct=$(ratio "${d[8]}" "${d[9]}")
+            money=${d[10]}
+            cost=$(value "checkout:cost_per_order_usd{version=\"agent\"}")
+            cost_v1=$(value "checkout:cost_per_order_usd{version=\"original\"}")
+            echo "source=$source agent requests=$reqs errors=$err p95=$p95 correct=$correct (${d[8]}/${d[9]}) money_errors=$money cost=$cost"
+
+            # A NaN error rate with traffic means every request succeeded but the
+            # failed series doesn't exist yet: count it as 0.
+            if gt "$reqs" 0 && [ "$err" = "NaN" ]; then err=0; fi
+
+            breach=""
+            lt "$reqs" "$MIN_AGENT_REQUESTS" || [ "$reqs" = "NaN" ] && breach="not enough agent traffic: $(num $reqs) requests, need $MIN_AGENT_REQUESTS"
+            [ -z "$breach" ] && gt "$err" "$MAX_ERROR_RATIO" && breach="error rate $(pct $err) > $(pct $MAX_ERROR_RATIO)"
+            [ -z "$breach" ] && gt "$p95" "$MAX_P95_SECONDS" && breach="p95 $(num $p95)s > ${MAX_P95_SECONDS}s"
+            [ -z "$breach" ] && gt "$money" 0 && breach="$(num $money) money errors (wrong charge or not charged once)"
+            [ -z "$breach" ] && lt "$correct" "$MIN_CORRECT_RATIO" && breach="correct $(pct $correct) < $(pct $MIN_CORRECT_RATIO)"
+
+            result="✅ pass"; [ -n "$breach" ] && result="❌ $breach"
+            echo "| $agent% | $fault | $(num $reqs) ($source) | $(pct $err) / $(pct $err_v1) | $(num $p95) / $(num $p95_v1) | $(pct $correct) | $(num $money) | $(num $cost) / $(num $cost_v1) | $result |" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ -n "$breach" ]; then
+              $demo || echo "::error title=Canary rolled back at $agent%::$breach"
+              set_weights 0
+              if $demo; then
+                kubectl set env deploy/checkoutservice-agent FAULT_MODE=NONE
+                {
+                  echo
+                  echo "### ✅ Rollback demo: fault caught, canary rolled back at $agent%"
+                  echo "\`$FAULT_MODE\` broke a threshold ($breach). All checkout traffic is back on the original."
+                } >> "$GITHUB_STEP_SUMMARY"
+                echo "::notice title=Rollback demo passed::$FAULT_MODE caught at $agent%: $breach"
+                exit 0
+              fi
+              {
+                echo
+                echo "### ❌ Rolled back at $agent%"
+                echo "$breach. All checkout traffic is back on the original."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          done
+
+          if $demo; then
+            {
+              echo
+              echo "### ❌ Rollback demo: \`$FAULT_MODE\` was not caught"
+              echo "The agent reached 100% with the fault on and no threshold broke."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Fault not caught::$FAULT_MODE reached 100% without a rollback"
+            exit 1
+          fi
+
+          {
+            echo
+            echo "### ✅ Migration successful"
+            echo "The agent took 100% of checkout traffic and stayed within every threshold at each step."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Canary passed::Agent at 100% within all thresholds"
+
+      # ---------------- 5. Tear down (runs even if a step above failed) ----------------
+      - name: Undeploy manifest
+        if: always() && inputs.teardown
+        run: kubectl delete -f release/kubernetes-manifests.yaml --ignore-not-found=true || true
+
+      - name: Undeploy Ollama
+        if: always() && inputs.teardown
+        run: kubectl delete -f "$OLLAMA_MANIFEST" --ignore-not-found=true || true
+
+      - name: Undeploy monitoring
+        if: always() && inputs.teardown
+        run: |
+          for f in release/k8s-prometheus/manifests/*.yaml; do
+            case "$f" in
+              *nodeExporter*) continue ;;
+            esac
+            kubectl delete -f "$f" --ignore-not-found=true || true
+          done
+          kubectl delete -f release/k8s-prometheus/manifests/setup --ignore-not-found=true || true
