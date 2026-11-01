@@ -29,4 +29,4 @@ runs:
       with:
         cluster_name: ${{ inputs.cluster_name }}
         location: ${{ inputs.location }}
-        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        project_id: ${{ inputs.project_id }}
