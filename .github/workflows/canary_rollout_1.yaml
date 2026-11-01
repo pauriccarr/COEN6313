@@ -1,4 +1,4 @@
-name: Canary rollout (checkout agent)
+name: Canary rollout (checkout agent) attempt1
 
 # Runs only when started by hand (Actions > Canary rollout > Run workflow).
 # Brings up monitoring, Ollama and the shop, moves checkout traffic to the agent
