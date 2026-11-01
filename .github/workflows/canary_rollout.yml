@@ -51,6 +51,7 @@ jobs:
         with:
           cluster_name: ${{ secrets.GKE_CLUSTER }}
           location: ${{ secrets.GKE_REGION }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       # ---------------- 1. Monitoring (same as deploy_monitoring.yml) ----------------
       - name: Deploy monitoring
