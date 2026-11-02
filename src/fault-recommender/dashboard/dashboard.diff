@@ -1,0 +1,264 @@
+--- a/main.py	2026-11-01 20:49:28.090133661 +0000
++++ b/main.py	2026-11-01 20:49:28.092374669 +0000
+@@ -5,6 +5,7 @@
+     AGENTS     JSON map name -> base URL, e.g.
+                {"email":"http://emailservice:5000","ad":"http://adserviceagent:8080"}
+     DATA_DIR   optional directory where /api/export also saves a timestamped copy (e.g. a PVC mount)
++    RECOMMENDER_URL  optional fault-recommender base URL, e.g. http://fault-recommender:8080
+ """
+ import json
+ import os
+@@ -12,11 +13,12 @@
+ from pathlib import Path
+ 
+ import httpx
+-from fastapi import FastAPI, HTTPException
++from fastapi import FastAPI, HTTPException, Request
+ from fastapi.responses import HTMLResponse, JSONResponse, Response
+ 
+ AGENTS = json.loads(os.environ.get("AGENTS", "{}"))
+ DATA_DIR = os.environ.get("DATA_DIR")
++RECOMMENDER = os.environ.get("RECOMMENDER_URL", "").rstrip("/")
+ TIMEOUT = httpx.Timeout(10.0, connect=3.0)
+ 
+ app = FastAPI(title="Fault Injection Dashboard")
+@@ -44,6 +46,27 @@
+         raise HTTPException(502, f"{name} returned non-JSON for {path}") from e
+ 
+ 
++# Recommender routes come before /api/{name}/... so "recommender" is never treated as an agent name
++@app.get("/api/recommender/enabled")
++def recommender_enabled():
++    return {"enabled": bool(RECOMMENDER)}
++
++
++@app.api_route("/api/recommender/{path:path}", methods=["GET", "POST"])
++async def recommender(path: str, request: Request):
++    if not RECOMMENDER:
++        raise HTTPException(404, "RECOMMENDER_URL is not set")
++    url = f"{RECOMMENDER}/api/{path}"
++    try:
++        async with httpx.AsyncClient(timeout=TIMEOUT) as c:
++            r = await c.request(request.method, url, content=await request.body(),
++                                headers={"Content-Type": request.headers.get("content-type", "application/json")})
++    except httpx.HTTPError as e:
++        raise HTTPException(502, f"recommender unreachable at {url}: {type(e).__name__}") from e
++    return Response(r.content, status_code=r.status_code,
++                    media_type=r.headers.get("content-type", "application/json"))
++
++
+ @app.get("/api/agents")
+ def agents():
+     return list(AGENTS)
+--- a/index.html	2026-11-01 20:49:28.090162071 +0000
++++ b/index.html	2026-11-01 20:49:28.092444352 +0000
+@@ -40,6 +40,26 @@
+   pre { background:var(--log); color:var(--logfg); padding:.8rem; border-radius:6px; max-height:300px;
+         overflow:auto; font-size:.78rem; white-space:pre-wrap; }
+   details summary { cursor:pointer; color:var(--muted); font-size:.9rem; margin-top:1rem; }
++  /* recommendations tab (copied from fault-recommender ui.html) */
++  .svc { border:1px solid var(--line); border-radius:8px; margin:1rem 0; overflow:hidden; }
++  .svc > header { background:var(--head); padding:.6rem .8rem; display:flex; gap:.6rem; flex-wrap:wrap; align-items:baseline; }
++  .svc > header b { font-size:1rem; }
++  .svc .meta { color:var(--muted); font-size:.82rem; }
++  .svc .summary { padding:.5rem .8rem 0; font-size:.9rem; }
++  .rt { border-collapse:collapse; width:100%; font-size:.86rem; }
++  .rt th, .rt td { border-top:1px solid var(--line); padding:.4rem .6rem; text-align:left; vertical-align:top; }
++  .rt th { font-weight:600; color:var(--muted); font-size:.8rem; }
++  .rt code { font-family:ui-monospace,monospace; font-size:.82rem; }
++  .pill { display:inline-block; padding:0 .45rem; border-radius:999px; font-size:.75rem; border:1px solid var(--line); }
++  .p-high { color:var(--bad); border-color:var(--bad); } .p-medium { color:var(--warn); border-color:var(--warn); }
++  .p-low { color:var(--muted); }
++  .st-exists { opacity:.55; }
++  .rt details summary { margin:0; font-size:.8rem; }
++  .rt dl { display:grid; grid-template-columns:max-content 1fr; gap:.2rem .6rem; margin:.4rem 0; font-size:.82rem; }
++  .rt dt { color:var(--muted); }
++  .rt pre { max-height:200px; }
++  :root { --warn:#b45309; }
++  @media (prefers-color-scheme: dark) { :root { --warn:#d29922; } }
+ </style>
+ </head>
+ <body>
+@@ -60,6 +80,8 @@
+ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+ 
+ let agents = [], current = null;
++const REC = "__recommendations";  // pseudo-tab for the fault-recommender
++let recEnabled = false;
+ const modes = {};      // agent -> list of modes
+ const selected = {};   // agent -> Set of selected modes
+ const last = {};       // agent -> {running, err}
+@@ -74,7 +96,8 @@
+ }
+ 
+ function renderTabs() {
+-  $("#tabs").innerHTML = agents.map(a => {
++  $("#tabs").innerHTML = (recEnabled ? [...agents, REC] : agents).map(a => {
++    if (a === REC) return `<button class="tab ${a === current ? "active" : ""}" data-a="${REC}">★ recommendations</button>`;
+     const st = last[a] || {};
+     const dot = st.err ? "err" : st.running ? "run" : "";
+     return `<button class="tab ${a === current ? "active" : ""}" data-a="${esc(a)}">${esc(a)}<span class="dot ${dot}"></span></button>`;
+@@ -94,6 +117,7 @@
+ 
+ async function renderPanel() {
+   const a = current; if (!a) { $("#panel").innerHTML = ""; return; }
++  if (a === REC) return renderRecPanel();
+   await loadModes(a);
+   const err = (last[a] || {}).err;
+   $("#panel").innerHTML = `
+@@ -171,6 +195,147 @@
+     </tbody></table>`;
+ }
+ 
++// ── Recommendations tab ──────────────────────────────────────────────────────
++// renderRecs is shared with the FaultLab dashboard tab
++function renderRecs(el, data, hideExisting) {
++  const svcs = Object.values(data.services || {});
++  if (!svcs.length) { el.innerHTML = `<p class="msg">No recommendations yet. Run a scan.</p>`; return; }
++  svcs.sort((a, b) => (b.is_agent - a.is_agent) || a.service.localeCompare(b.service));
++  const when = data.generated_at ? new Date(data.generated_at).toLocaleString() : "";
++  el.innerHTML = `<p class="msg">Last scan: ${esc(when)} · namespace <b>${esc(data.namespace)}</b> via ${esc(data.source)}
++      · LLM: ${esc(data.llm || "off")}</p>` + svcs.map(s => {
++    const p = s.profile || {};
++    const recs = (s.recommendations || []).filter(r => !hideExisting || r.status !== "exists");
++    const modes = ((p.agent || {}).modes || []);
++    return `<section class="svc">
++      <header><b>${esc(s.service)}</b>
++        <span class="pill">${s.is_agent ? "agent" : "service"}</span>
++        <span class="meta">${p.grpc ? esc(p.grpc.service) + " · " + esc(p.grpc.methods.join(", ")) : ""}</span>
++        <span class="meta">calls: ${esc((p.depends_on || []).join(", ") || "-")} · called by: ${esc((p.called_by || []).join(", ") || "-")}</span>
++        ${modes.length ? `<span class="meta">has: ${esc(modes.join(" "))}</span>` : ""}
++        ${s.recommendations.some(r => r.stub && r.status === "new") ? `<a class="meta" href="api/recommender/recommendations/${encodeURIComponent(s.service)}/stubs" target="_blank">code stubs</a>` : ""}
++      </header>
++      ${s.summary ? `<div class="summary">${esc(s.summary)}</div>` : ""}
++      ${s.llm_error ? `<div class="summary msg">LLM skipped: ${esc(s.llm_error)}</div>` : ""}
++      <table class="rt"><thead><tr><th>Priority</th><th>Fault</th><th>Target</th><th>Why</th></tr></thead><tbody>
++      ${recs.map(r => `<tr class="st-${esc(r.status)}">
++        <td><span class="pill p-${esc(r.priority)}">${esc(r.priority)}</span></td>
++        <td><code>${esc(r.id)}</code><br>${esc(r.title)}<br><span class="msg">${esc(r.category)} · ${esc(r.source)}${r.status !== "new" ? " · " + esc(r.status) : ""}</span></td>
++        <td>${esc(r.target)}</td>
++        <td>${esc(r.rationale)}
++          <details><summary>details</summary><dl>
++            <dt>Inject</dt><dd>${esc(r.inject)}</dd>
++            <dt>Symptom</dt><dd>${esc(r.expected_symptom)}</dd>
++            <dt>Detect</dt><dd>${esc(r.detect)}</dd></dl>
++            ${r.stub ? `<pre>${esc(r.stub)}</pre>` : ""}</details></td></tr>`).join("")
++        || `<tr><td colspan="4" class="msg">Nothing new to suggest.</td></tr>`}
++      </tbody></table></section>`;
++  }).join("");
++}
++
++let recData = {}, recTimer;
++// ── automated campaign box (same code in the recommender page and the FaultLab dashboard tab) ──
++// base: "api/" on the recommender page, "api/recommender/" in the dashboard
++function campaignUI(el, base, services) {
++  const opts = services.map(s => `<option>${esc(s)}</option>`).join("");
++  el.innerHTML = `<section class="svc"><header><b>Automated campaign</b>
++      <span class="meta">the recommender picks the faults, runs them on the agent's test runner, checks the result and re-ranks</span></header>
++    <div class="bar" style="padding:.6rem .8rem 0">
++      <select id="cSvc">${opts}</select>
++      <select id="cStrat"><option value="llm">LLM picks</option><option value="rules">rules pick</option><option value="all">run all (manual baseline)</option></select>
++      <label class="msg">budget <input id="cBudget" type="number" min="1" max="15" value="4" style="width:3.5rem"></label>
++      <label class="msg">rounds <input id="cRounds" type="number" min="1" max="5" value="2" style="width:3rem"></label>
++      <button class="primary" id="cRun">Run campaign</button>
++      <span class="msg" id="cStatus"></span></div>
++    <div id="cOut" style="padding:0 .8rem .6rem"></div>
++    <details style="padding:0 .8rem .6rem"><summary>Campaign log</summary><pre id="cLog">(no campaign yet)</pre></details></section>`;
++  let t = null;
++  const q = s => el.querySelector(s);
++  const yn = v => v === true ? "✓" : v === false ? "✗" : "–";
++  const draw = c => {
++    if (!c) { q("#cOut").innerHTML = `<p class="msg">No campaign yet.</p>`; return; }
++    const sc = c.score, cp = c.canary_pick || {};
++    q("#cOut").innerHTML = `<p class="msg">${esc(c.service)} · ${esc(c.strategy)} · ${esc(c.finished_at)} · ${c.elapsed_s}s ·
++        ${sc.faults_run} faults run, <b>${sc.caught}</b> caught, <b style="color:var(--bad,#b91c1c)">${sc.gaps.length}</b> gap(s)
++        ${sc.gaps.length ? "(" + esc(sc.gaps.join(", ")) + ")" : ""} · control ${sc.control_clean ? "clean" : "NOT clean"}
++        · predictions: infection point ${sc.hypothesis_infection_point_acc ?? "–"}, detection ${sc.hypothesis_detection_acc ?? "–"}
++        · coverage ${c.coverage.run_after}/${c.coverage.modes} modes</p>
++      <p class="msg">Canary rollback pick: <code>${esc(cp.fault_mode)}</code>. ${esc(cp.why || "")}
++        ${cp.avoid && cp.avoid.length ? " Avoid (not caught): " + esc(cp.avoid.join(", ")) : ""}</p>` +
++      c.rounds.map(r => `<table class="rt" style="table-layout:fixed"><colgroup><col style="width:17%"><col style="width:25%"><col style="width:19%"><col style="width:19%"><col style="width:7%"><col style="width:13%"></colgroup><thead><tr><th>Round ${r.round}</th><th>Why</th><th>Expected</th><th>Actual</th><th>IP / det.</th><th>Verdict</th></tr></thead><tbody>
++        ${r.results.map(j => { const a = j.actual || {}; return `<tr>
++          <td><code>${esc(j.mode)}</code><br><span class="msg">${esc(j.source)}</span></td>
++          <td>${esc(j.why)}</td>
++          <td>${esc(j.expect_infection_point || "?")}<br><span class="msg">${esc(j.expect_caught_by == null ? "?" : (j.expect_caught_by.join(", ") || "not caught"))}</span></td>
++          <td>${esc(a.infection_point || "-")}<br><span class="msg">${esc((a.caught_by || []).join(", ") || "nothing")}</span></td>
++          <td>${yn(j.infection_point_ok)} / ${yn(j.detection_ok)}</td>
++          <td${/GAP|FALSE/.test(j.verdict) ? ' style="color:var(--bad,#b91c1c);font-weight:600"' : ""}>${esc(j.verdict)}</td></tr>`; }).join("")}
++        </tbody></table>`).join("");
++  };
++  const refresh = async () => {
++    clearTimeout(t);
++    if (!el.isConnected) return;
++    try {
++      const s = await (await fetch(base + "campaign")).json();
++      q("#cStatus").textContent = s.running ? "Running…" : s.error ? "Failed: " + s.error : s.finished_at ? "Idle" : "";
++      q("#cLog").textContent = s.log || "(no campaign yet)";
++      q("#cRun").disabled = s.running;
++      draw(s.latest);
++      if (s.running) t = setTimeout(refresh, 2000);
++    } catch (e) { q("#cStatus").textContent = e.message; }
++  };
++  q("#cRun").onclick = async () => {
++    const body = { service: q("#cSvc").value, strategy: q("#cStrat").value,
++                   budget: +q("#cBudget").value || 4, rounds: +q("#cRounds").value || 1 };
++    const r = await (await fetch(base + "campaign", { method: "POST", headers: {"Content-Type": "application/json"},
++                                                    body: JSON.stringify(body) })).json();
++    q("#cStatus").textContent = r.status === "busy" ? "A campaign is already running" : r.detail || "Started";
++    t = setTimeout(refresh, 500);
++  };
++  refresh();
++}
++
++async function renderRecPanel() {
++  $("#panel").innerHTML = `
++    <div class="bar">
++      <button class="primary" id="scan">Scan (rules + LLM)</button>
++      <button id="scanRules">Scan (rules only)</button>
++      <label class="msg"><input type="checkbox" id="hideExisting" checked> hide modes that already exist</label>
++      <span class="msg" id="status"></span>
++    </div>
++    <div id="campaign"></div>
++    <div id="recs"><p class="msg">Loading…</p></div>
++    <details><summary>Scan log</summary><pre id="log">(no scan yet)</pre></details>`;
++  const draw = () => renderRecs($("#recs"), recData, $("#hideExisting").checked);
++  const scan = async llm => {
++    try {
++      const r = await api("api/recommender/scan", { method: "POST", headers: {"Content-Type":"application/json"},
++                                                   body: JSON.stringify({ llm }) });
++      $("#status").textContent = r.status === "busy" ? "A scan is already running" : "Started";
++    } catch (e) { $("#status").textContent = e.message; }
++    recTimer = setTimeout(refreshRecs, 500);
++  };
++  const refreshRecs = async () => {
++    clearTimeout(recTimer);
++    if (current !== REC) return;
++    try {
++      const s = await api("api/recommender/status");
++      $("#status").textContent = s.running ? `Scanning… ${s.progress || ""}` : s.finished_at ? "Idle" : "";
++      $("#log").textContent = s.log || "(no scan yet)";
++      $("#scan").disabled = $("#scanRules").disabled = s.running;
++      recData = await api("api/recommender/recommendations");
++      draw();
++      if (s.running) recTimer = setTimeout(refreshRecs, 2000);
++    } catch (e) { $("#recs").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
++  };
++  $("#scan").onclick = () => scan(true);
++  $("#scanRules").onclick = () => scan(false);
++  $("#hideExisting").onchange = draw;
++  api("api/recommender/services").then(d => campaignUI($("#campaign"), "api/recommender/",
++    Object.keys(d.services).filter(k => d.services[k].agent))).catch(() => {});
++  refreshRecs();
++}
++
+ $("#runAll").onclick = async () => {
+   $("#global").textContent = "Starting all agents…";
+   try {
+@@ -184,6 +349,7 @@
+ 
+ (async () => {
+   agents = await api("api/agents");
++  try { recEnabled = (await api("api/recommender/enabled")).enabled; } catch (_) {}
+   current = agents[0] || null;
+   renderTabs(); renderPanel();
+ })();

@@ -1,0 +1,129 @@
+# Fault Injection Recommender: read-only access to the namespace, plus the same AGENTS map as the dashboard.
+# Campaigns only call the agents' own /ui/run test runner over HTTP; the K8s Role stays read-only.
+# Apply in the namespace where Online Boutique runs:
+#   kubectl apply -f k8s-fault-recommender.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fault-recommender
+---
+# Read-only: list Services, Deployments and Pods so it can map the call graph. No write verbs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fault-recommender-read
+rules:
+- apiGroups: [""]
+  resources: ["services", "pods"]
+  verbs: ["get", "list"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fault-recommender-read
+subjects:
+- kind: ServiceAccount
+  name: fault-recommender
+roleRef:
+  kind: Role
+  name: fault-recommender-read
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fault-recommender
+  labels:
+    app: fault-recommender
+spec:
+  selector:
+    matchLabels:
+      app: fault-recommender
+  template:
+    metadata:
+      labels:
+        app: fault-recommender
+    spec:
+      serviceAccountName: fault-recommender
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: fault-recommender
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: ghcr.io/pauriccarr/engr-fault-recommender:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: AGENTS
+          valueFrom:
+            configMapKeyRef:
+              name: faultlab-dashboard
+              key: AGENTS
+        - name: OLLAMA_SERVICE_URL        # Ollama runs in the shop's namespace on the new cluster
+          value: "http://ollama:11434"
+        - name: OLLAMA_MODEL
+          value: "llama3.1"
+        - name: AGENT_RUN_TIMEOUT         # seconds a campaign waits for one agent run (live runner: minutes per mode)
+          value: "3600"
+        - name: SCAN_ON_START
+          value: "true"
+        - name: SCAN_INTERVAL      # seconds; 0 = only when you press Scan
+          value: "0"
+        - name: RESULTS_DIR
+          value: /results
+        volumeMounts:
+        - name: results
+          mountPath: /results
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      volumes:
+      - name: results
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fault-recommender
+  labels:
+    app: fault-recommender
+spec:
+  type: ClusterIP
+  selector:
+    app: fault-recommender
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

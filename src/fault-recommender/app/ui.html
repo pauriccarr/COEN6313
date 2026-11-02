@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fault Recommender</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --head:#f6f8fa;
+          --accent:#2563eb; --ok:#15803d; --bad:#b91c1c; --warn:#b45309; --log:#0d1117; --logfg:#e6edf3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --head:#161b22;
+            --accent:#4493f8; --ok:#3fb950; --bad:#f85149; --warn:#d29922; --log:#010409; --logfg:#e6edf3; } }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg);
+         margin:0 auto; max-width:1100px; padding:1.5rem 1rem 4rem; }
+  h1 { font-size:1.35rem; margin:0 0 .25rem; }
+  .sub { color:var(--muted); margin:0 0 1.2rem; font-size:.9rem; }
+  .bar { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
+  button { padding:.45rem .9rem; border:1px solid var(--line); border-radius:6px; background:var(--head);
+           color:var(--fg); cursor:pointer; font-size:.9rem; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .msg { color:var(--muted); font-size:.88rem; }
+  pre { background:var(--log); color:var(--logfg); padding:.8rem; border-radius:6px; max-height:300px;
+        overflow:auto; font-size:.78rem; white-space:pre-wrap; }
+  details summary { cursor:pointer; color:var(--muted); font-size:.9rem; margin-top:1rem; }
+  /* recommendations (same rules are copied into the dashboard) */
+  .svc { border:1px solid var(--line); border-radius:8px; margin:1rem 0; overflow:hidden; }
+  .svc > header { background:var(--head); padding:.6rem .8rem; display:flex; gap:.6rem; flex-wrap:wrap; align-items:baseline; }
+  .svc > header b { font-size:1rem; }
+  .svc .meta { color:var(--muted); font-size:.82rem; }
+  .svc .summary { padding:.5rem .8rem 0; font-size:.9rem; }
+  .rt { border-collapse:collapse; width:100%; font-size:.86rem; }
+  .rt th, .rt td { border-top:1px solid var(--line); padding:.4rem .6rem; text-align:left; vertical-align:top; }
+  .rt th { font-weight:600; color:var(--muted); font-size:.8rem; }
+  .rt code { font-family:ui-monospace,monospace; font-size:.82rem; }
+  .pill { display:inline-block; padding:0 .45rem; border-radius:999px; font-size:.75rem; border:1px solid var(--line); }
+  .p-high { color:var(--bad); border-color:var(--bad); } .p-medium { color:var(--warn); border-color:var(--warn); }
+  .p-low { color:var(--muted); }
+  .st-exists { opacity:.55; }
+  .rt details summary { margin:0; font-size:.8rem; }
+  .rt dl { display:grid; grid-template-columns:max-content 1fr; gap:.2rem .6rem; margin:.4rem 0; font-size:.82rem; }
+  .rt dt { color:var(--muted); }
+  .rt pre { max-height:200px; }
+</style>
+</head>
+<body>
+<h1>Fault Injection Recommender</h1>
+<p class="sub">Finds the services in the cluster and suggests which faults to inject next, and why.</p>
+
+<div class="bar">
+  <button class="primary" id="scan">Scan (rules + LLM)</button>
+  <button id="scanRules">Scan (rules only)</button>
+  <label class="msg"><input type="checkbox" id="hideExisting" checked> hide modes that already exist</label>
+  <span class="msg" id="status"></span>
+</div>
+<div id="campaign"></div>
+<div id="recs"><p class="msg">Loading…</p></div>
+<details><summary>Scan log</summary><pre id="log">(no scan yet)</pre></details>
+
+<script>
+const API = "api/";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  let body = null;
+  try { body = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error((body && body.detail) || `HTTP ${r.status}`);
+  return body;
+}
+
+// renderRecs is shared with the FaultLab dashboard tab
+function renderRecs(el, data, hideExisting) {
+  const svcs = Object.values(data.services || {});
+  if (!svcs.length) { el.innerHTML = `<p class="msg">No recommendations yet. Run a scan.</p>`; return; }
+  svcs.sort((a, b) => (b.is_agent - a.is_agent) || a.service.localeCompare(b.service));
+  const when = data.generated_at ? new Date(data.generated_at).toLocaleString() : "";
+  el.innerHTML = `<p class="msg">Last scan: ${esc(when)} · namespace <b>${esc(data.namespace)}</b> via ${esc(data.source)}
+      · LLM: ${esc(data.llm || "off")}</p>` + svcs.map(s => {
+    const p = s.profile || {};
+    const recs = (s.recommendations || []).filter(r => !hideExisting || r.status !== "exists");
+    const modes = ((p.agent || {}).modes || []);
+    return `<section class="svc">
+      <header><b>${esc(s.service)}</b>
+        <span class="pill">${s.is_agent ? "agent" : "service"}</span>
+        <span class="meta">${p.grpc ? esc(p.grpc.service) + " · " + esc(p.grpc.methods.join(", ")) : ""}</span>
+        <span class="meta">calls: ${esc((p.depends_on || []).join(", ") || "-")} · called by: ${esc((p.called_by || []).join(", ") || "-")}</span>
+        ${modes.length ? `<span class="meta">has: ${esc(modes.join(" "))}</span>` : ""}
+        ${s.recommendations.some(r => r.stub && r.status === "new") ? `<a class="meta" href="${API}recommendations/${encodeURIComponent(s.service)}/stubs" target="_blank">code stubs</a>` : ""}
+      </header>
+      ${s.summary ? `<div class="summary">${esc(s.summary)}</div>` : ""}
+      ${s.llm_error ? `<div class="summary msg">LLM skipped: ${esc(s.llm_error)}</div>` : ""}
+      <table class="rt"><thead><tr><th>Priority</th><th>Fault</th><th>Target</th><th>Why</th></tr></thead><tbody>
+      ${recs.map(r => `<tr class="st-${esc(r.status)}">
+        <td><span class="pill p-${esc(r.priority)}">${esc(r.priority)}</span></td>
+        <td><code>${esc(r.id)}</code><br>${esc(r.title)}<br><span class="msg">${esc(r.category)} · ${esc(r.source)}${r.status !== "new" ? " · " + esc(r.status) : ""}</span></td>
+        <td>${esc(r.target)}</td>
+        <td>${esc(r.rationale)}
+          <details><summary>details</summary><dl>
+            <dt>Inject</dt><dd>${esc(r.inject)}</dd>
+            <dt>Symptom</dt><dd>${esc(r.expected_symptom)}</dd>
+            <dt>Detect</dt><dd>${esc(r.detect)}</dd></dl>
+            ${r.stub ? `<pre>${esc(r.stub)}</pre>` : ""}</details></td></tr>`).join("")
+        || `<tr><td colspan="4" class="msg">Nothing new to suggest.</td></tr>`}
+      </tbody></table></section>`;
+  }).join("");
+}
+
+// ── automated campaign box (same code in the recommender page and the FaultLab dashboard tab) ──
+// base: "api/" on the recommender page, "api/recommender/" in the dashboard
+function campaignUI(el, base, services) {
+  const opts = services.map(s => `<option>${esc(s)}</option>`).join("");
+  el.innerHTML = `<section class="svc"><header><b>Automated campaign</b>
+      <span class="meta">the recommender picks the faults, runs them on the agent's test runner, checks the result and re-ranks</span></header>
+    <div class="bar" style="padding:.6rem .8rem 0">
+      <select id="cSvc">${opts}</select>
+      <select id="cStrat"><option value="llm">LLM picks</option><option value="rules">rules pick</option><option value="all">run all (manual baseline)</option></select>
+      <label class="msg">budget <input id="cBudget" type="number" min="1" max="15" value="4" style="width:3.5rem"></label>
+      <label class="msg">rounds <input id="cRounds" type="number" min="1" max="5" value="2" style="width:3rem"></label>
+      <button class="primary" id="cRun">Run campaign</button>
+      <span class="msg" id="cStatus"></span></div>
+    <div id="cOut" style="padding:0 .8rem .6rem"></div>
+    <details style="padding:0 .8rem .6rem"><summary>Campaign log</summary><pre id="cLog">(no campaign yet)</pre></details></section>`;
+  let t = null;
+  const q = s => el.querySelector(s);
+  const yn = v => v === true ? "✓" : v === false ? "✗" : "–";
+  const draw = c => {
+    if (!c) { q("#cOut").innerHTML = `<p class="msg">No campaign yet.</p>`; return; }
+    const sc = c.score, cp = c.canary_pick || {};
+    q("#cOut").innerHTML = `<p class="msg">${esc(c.service)} · ${esc(c.strategy)} · ${esc(c.finished_at)} · ${c.elapsed_s}s ·
+        ${sc.faults_run} faults run, <b>${sc.caught}</b> caught, <b style="color:var(--bad,#b91c1c)">${sc.gaps.length}</b> gap(s)
+        ${sc.gaps.length ? "(" + esc(sc.gaps.join(", ")) + ")" : ""} · control ${sc.control_clean ? "clean" : "NOT clean"}
+        · predictions: infection point ${sc.hypothesis_infection_point_acc ?? "–"}, detection ${sc.hypothesis_detection_acc ?? "–"}
+        · coverage ${c.coverage.run_after}/${c.coverage.modes} modes</p>
+      <p class="msg">Canary rollback pick: <code>${esc(cp.fault_mode)}</code>. ${esc(cp.why || "")}
+        ${cp.avoid && cp.avoid.length ? " Avoid (not caught): " + esc(cp.avoid.join(", ")) : ""}</p>` +
+      c.rounds.map(r => `<table class="rt" style="table-layout:fixed"><colgroup><col style="width:17%"><col style="width:25%"><col style="width:19%"><col style="width:19%"><col style="width:7%"><col style="width:13%"></colgroup><thead><tr><th>Round ${r.round}</th><th>Why</th><th>Expected</th><th>Actual</th><th>IP / det.</th><th>Verdict</th></tr></thead><tbody>
+        ${r.results.map(j => { const a = j.actual || {}; return `<tr>
+          <td><code>${esc(j.mode)}</code><br><span class="msg">${esc(j.source)}</span></td>
+          <td>${esc(j.why)}</td>
+          <td>${esc(j.expect_infection_point || "?")}<br><span class="msg">${esc(j.expect_caught_by == null ? "?" : (j.expect_caught_by.join(", ") || "not caught"))}</span></td>
+          <td>${esc(a.infection_point || "-")}<br><span class="msg">${esc((a.caught_by || []).join(", ") || "nothing")}</span></td>
+          <td>${yn(j.infection_point_ok)} / ${yn(j.detection_ok)}</td>
+          <td${/GAP|FALSE/.test(j.verdict) ? ' style="color:var(--bad,#b91c1c);font-weight:600"' : ""}>${esc(j.verdict)}</td></tr>`; }).join("")}
+        </tbody></table>`).join("");
+  };
+  const refresh = async () => {
+    clearTimeout(t);
+    if (!el.isConnected) return;
+    try {
+      const s = await (await fetch(base + "campaign")).json();
+      q("#cStatus").textContent = s.running ? "Running…" : s.error ? "Failed: " + s.error : s.finished_at ? "Idle" : "";
+      q("#cLog").textContent = s.log || "(no campaign yet)";
+      q("#cRun").disabled = s.running;
+      draw(s.latest);
+      if (s.running) t = setTimeout(refresh, 2000);
+    } catch (e) { q("#cStatus").textContent = e.message; }
+  };
+  q("#cRun").onclick = async () => {
+    const body = { service: q("#cSvc").value, strategy: q("#cStrat").value,
+                   budget: +q("#cBudget").value || 4, rounds: +q("#cRounds").value || 1 };
+    const r = await (await fetch(base + "campaign", { method: "POST", headers: {"Content-Type": "application/json"},
+                                                    body: JSON.stringify(body) })).json();
+    q("#cStatus").textContent = r.status === "busy" ? "A campaign is already running" : r.detail || "Started";
+    t = setTimeout(refresh, 500);
+  };
+  refresh();
+}
+
+let data = {};
+const draw = () => renderRecs($("#recs"), data, $("#hideExisting").checked);
+
+async function refresh() {
+  const s = await api("status");
+  $("#status").textContent = s.running ? `Scanning… ${s.progress || ""}` : s.finished_at ? "Idle" : "";
+  $("#log").textContent = s.log || "(no scan yet)";
+  $("#scan").disabled = $("#scanRules").disabled = s.running;
+  data = await api("recommendations");
+  draw();
+  if (s.running) setTimeout(refresh, 2000);
+}
+
+async function scan(llm) {
+  const r = await api("scan", { method: "POST", headers: {"Content-Type": "application/json"},
+                                body: JSON.stringify({ llm }) });
+  $("#status").textContent = r.status === "busy" ? "A scan is already running" : "Started";
+  setTimeout(refresh, 500);
+}
+
+$("#scan").onclick = () => scan(true);
+$("#scanRules").onclick = () => scan(false);
+$("#hideExisting").onchange = draw;
+api("services").then(d => campaignUI($("#campaign"), API,
+  Object.keys(d.services).filter(k => d.services[k].agent))).catch(() => {});
+refresh().catch(e => { $("#recs").innerHTML = `<p class="msg">${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

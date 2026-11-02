@@ -1,0 +1,2677 @@
+{
+  "agent": "checkoutservice",
+  "backend": "mock",
+  "generated_at": "2026-10-28T01:19:21Z",
+  "results": [
+    {
+      "fault_mode": "NONE",
+      "elapsed_ms": 8,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "propagation_depth": 0,
+      "last_known_well": "FINAL_ANSWER",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-1",
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.269603977Z",
+          "detail": "order bc21b700-b84f-4ccf-9944-bf4ed7b02299",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.272543894Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.273295842Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.274141281Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.274903905Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.275715455Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.276474229Z",
+          "infected": false
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.277010381Z",
+          "infected": false
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.277606157Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.277612381Z",
+          "infected": false
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.277626901Z",
+          "detail": "order bc21b700-b84f-4ccf-9944-bf4ed7b02299 accepted",
+          "infected": false
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "FM_1_2",
+      "elapsed_ms": 4,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "ORDER_SHIPPED",
+        "PAYMENT_CHARGED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "ORDER_SHIPPED",
+      "infection_detail": "order shipped before the card was charged",
+      "propagation_depth": 6,
+      "last_known_well": "SHIPPING_QUOTED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-2",
+      "detected_by": "checks",
+      "failed_checks": [
+        "paid_before_ship"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": false,
+          "detail": "order shipped before the card was charged"
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: paid_before_ship",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.281062856Z",
+          "detail": "order 190fac30-75c9-4658-ac63-ef76604d9ec0",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.281906089Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.282271074Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.283021272Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.283736103Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.284471387Z",
+          "infected": true
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.284731252Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.285014908Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.285299926Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.285309232Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.285317117Z",
+          "detail": "order 190fac30-75c9-4658-ac63-ef76604d9ec0 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "FM_1_3",
+      "elapsed_ms": 4,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "PAYMENT_CHARGED",
+      "infection_detail": "charge_card ran twice",
+      "propagation_depth": 5,
+      "last_known_well": "PAYMENT_CHARGED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-4",
+      "detected_by": "checks",
+      "failed_checks": [
+        "paid_once",
+        "shipped_once"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": false,
+          "detail": "2 real charges"
+        },
+        {
+          "rule": "shipped_once",
+          "pass": false,
+          "detail": "2 real shipments, response tracking \"TRK-MOCK-4\", ship_order returned \"TRK-MOCK-3\""
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: paid_once, shipped_once",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.288323268Z",
+          "detail": "order 69b08d25-370e-434c-b74c-59e26474d85a",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.28900456Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.289259559Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.2896403Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.290225715Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.290801083Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.29157489Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.292185046Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.292950779Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.29295834Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.292970179Z",
+          "detail": "order 69b08d25-370e-434c-b74c-59e26474d85a accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "FM_2_2",
+      "elapsed_ms": 4,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "PRODUCTS_LOADED"
+      ],
+      "infection_point": "PRODUCTS_LOADED",
+      "infection_detail": "get_product was not called; its result was made up",
+      "propagation_depth": 8,
+      "last_known_well": "CART_LOADED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-5",
+      "detected_by": "checks",
+      "failed_checks": [
+        "charge_total"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": false,
+          "detail": "charged 8.27 EUR, expected 49.66 EUR"
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: charge_total",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.295862625Z",
+          "detail": "order 046581a8-2bc2-4805-ab89-cf80b58d0607",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.298101539Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.298542555Z",
+          "infected": true
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.299128365Z",
+          "infected": true
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.299684122Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.299964984Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.300215082Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.300595708Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.300601468Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.300610517Z",
+          "detail": "order 046581a8-2bc2-4805-ab89-cf80b58d0607 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true,
+          "faked": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true,
+          "faked": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "FM_2_5",
+      "elapsed_ms": 3,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "SHIPPING_QUOTED",
+      "infection_detail": "shipping quote ignored: order charged with free shipping",
+      "propagation_depth": 7,
+      "last_known_well": "PRICES_CONVERTED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-6",
+      "detected_by": "checks",
+      "failed_checks": [
+        "charge_total"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": false,
+          "detail": "charged 41.39 EUR, expected 49.66 EUR"
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: charge_total",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.303394988Z",
+          "detail": "order e419f844-b11f-46bf-b70c-4307375e680d",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.30396389Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.304326938Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.304841838Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.305277726Z",
+          "infected": true
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.305868231Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.306098231Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.306281996Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.306548146Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.306552616Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.30655988Z",
+          "detail": "order e419f844-b11f-46bf-b70c-4307375e680d accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true,
+          "tampered": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "FM_3_1",
+      "elapsed_ms": 0,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED"
+      ],
+      "infection_point": "FINAL_ANSWER",
+      "infection_detail": "reported success after the first step of the plan",
+      "propagation_depth": 1,
+      "last_known_well": "CART_LOADED",
+      "order_accepted": true,
+      "detected_by": "checks",
+      "failed_checks": [
+        "valid_products",
+        "charge_total",
+        "paid_once",
+        "shipped_once",
+        "cart_emptied",
+        "confirmation",
+        "items_match_cart"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": false,
+          "detail": "order has no items"
+        },
+        {
+          "rule": "charge_total",
+          "pass": false,
+          "detail": "no real charge to compare (order has no items)"
+        },
+        {
+          "rule": "paid_once",
+          "pass": false,
+          "detail": "0 real charges"
+        },
+        {
+          "rule": "shipped_once",
+          "pass": false,
+          "detail": "0 real shipments, response tracking \"\", ship_order returned \"\""
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": false,
+          "detail": "2 items still in the cart"
+        },
+        {
+          "rule": "confirmation",
+          "pass": false,
+          "detail": "no confirmation email sent"
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": false,
+          "detail": "cart had map[66VCHSJNUP:2 OLJCESPC7Z:1], order has map[]"
+        }
+      ],
+      "boundary_alert_point": "cart still has items after a successful order",
+      "outcome": "order accepted; correctness checks failed: valid_products, charge_total, paid_once, shipped_once, cart_emptied, confirmation, items_match_cart",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.30919002Z",
+          "detail": "order c5bd8e9c-7a8c-40d7-b7c0-af51f7e81713",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.309760689Z",
+          "infected": false
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.309783419Z",
+          "detail": "order c5bd8e9c-7a8c-40d7-b7c0-af51f7e81713 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "FM_3_2",
+      "elapsed_ms": 3,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "ORDER_VERIFIED"
+      ],
+      "infection_point": "ORDER_VERIFIED",
+      "infection_detail": "final answer accepted without verification",
+      "propagation_depth": 1,
+      "last_known_well": "CONFIRMATION_SENT",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-7",
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted despite the fault (not detected)",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.310964421Z",
+          "detail": "order 59d58b6c-6d75-46f4-8d22-5ca7d33c6329",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.311571206Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.311886692Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.312550819Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.313126047Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.313704696Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.314031687Z",
+          "infected": false
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.314312432Z",
+          "infected": false
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.314722927Z",
+          "infected": false
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.314752903Z",
+          "detail": "order 59d58b6c-6d75-46f4-8d22-5ca7d33c6329 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_SKIP_PAYMENT",
+      "elapsed_ms": 2,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "PAYMENT_CHARGED"
+      ],
+      "infection_point": "PAYMENT_CHARGED",
+      "infection_detail": "charge_card was not called; its result was made up",
+      "propagation_depth": 5,
+      "last_known_well": "SHIPPING_QUOTED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-8",
+      "detected_by": "checks",
+      "failed_checks": [
+        "charge_total",
+        "paid_once"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": false,
+          "detail": "no real charge to compare (\u003cnil\u003e)"
+        },
+        {
+          "rule": "paid_once",
+          "pass": false,
+          "detail": "0 real charges"
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: charge_total, paid_once",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.317232302Z",
+          "detail": "order 3138987c-eedf-498b-9f02-ad148ae2bc96",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.317729257Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.317987194Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.318459987Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.319021753Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.319501519Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.319727604Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.319995259Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.320000976Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.320009593Z",
+          "detail": "order 3138987c-eedf-498b-9f02-ad148ae2bc96 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true,
+          "faked": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_FAKE_TRACKING",
+      "elapsed_ms": 3,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "ORDER_SHIPPED"
+      ],
+      "infection_point": "ORDER_SHIPPED",
+      "infection_detail": "ship_order was not called; its result was made up",
+      "propagation_depth": 4,
+      "last_known_well": "PAYMENT_CHARGED",
+      "order_accepted": true,
+      "tracking_id": "FAKE-40AA80F2",
+      "detected_by": "checks",
+      "failed_checks": [
+        "shipped_once"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": false,
+          "detail": "0 real shipments, response tracking \"FAKE-40AA80F2\", ship_order returned \"\""
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: shipped_once",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.324190909Z",
+          "detail": "order 09ef2d28-86df-4cf3-bcec-f4179e2c36c5",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.324836083Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.325112361Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.325619654Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.326102403Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.326577617Z",
+          "infected": false
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.326837501Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.327189454Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.327196848Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.327208686Z",
+          "detail": "order 09ef2d28-86df-4cf3-bcec-f4179e2c36c5 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true,
+          "faked": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_CART_NOT_EMPTIED",
+      "elapsed_ms": 2,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "CART_EMPTIED"
+      ],
+      "infection_point": "CART_EMPTIED",
+      "infection_detail": "empty_cart was not called; its result was made up",
+      "propagation_depth": 3,
+      "last_known_well": "ORDER_SHIPPED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-9",
+      "detected_by": "checks",
+      "failed_checks": [
+        "cart_emptied"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": false,
+          "detail": "2 items still in the cart"
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "boundary_alert_point": "cart still has items after a successful order",
+      "outcome": "order accepted; correctness checks failed: cart_emptied",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.329305489Z",
+          "detail": "order a4d807e3-a073-499d-810b-e2aa41083f0a",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.329888621Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.330043034Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.330546814Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.33094454Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.331291246Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.331462461Z",
+          "infected": false
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.33177675Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.331782329Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.331790684Z",
+          "detail": "order a4d807e3-a073-499d-810b-e2aa41083f0a accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true,
+          "faked": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_NO_CONFIRMATION",
+      "elapsed_ms": 2,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [
+        "CONFIRMATION_SENT"
+      ],
+      "infection_point": "CONFIRMATION_SENT",
+      "infection_detail": "send_order_confirmation was not called; its result was made up",
+      "propagation_depth": 2,
+      "last_known_well": "CART_EMPTIED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-10",
+      "detected_by": "checks",
+      "failed_checks": [
+        "confirmation"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": false,
+          "detail": "no confirmation email sent"
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: confirmation",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.333804472Z",
+          "detail": "order ea5f8c25-d13a-4f35-be97-25bac1a13477",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.334222739Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.33446711Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.334965227Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.335435847Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.335850955Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.33608433Z",
+          "infected": false
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.336366348Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.336411502Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.336418862Z",
+          "detail": "order ea5f8c25-d13a-4f35-be97-25bac1a13477 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true,
+          "faked": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_WRONG_TOTAL",
+      "elapsed_ms": 2,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "PAYMENT_CHARGED",
+      "infection_detail": "charged 44.69 instead of 49.66 (10% off)",
+      "propagation_depth": 6,
+      "last_known_well": "SHIPPING_QUOTED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-11",
+      "detected_by": "checks",
+      "failed_checks": [
+        "charge_total"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": false,
+          "detail": "charged 44.69 EUR, expected 49.66 EUR"
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: charge_total",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.338588683Z",
+          "detail": "order 8f96ce5d-327c-4cfd-9044-880c4b37a663",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.339067793Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.339305755Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.339761818Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.340145926Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.340493336Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.340636069Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.340830022Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.341105547Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.341112767Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.341123311Z",
+          "detail": "order 8f96ce5d-327c-4cfd-9044-880c4b37a663 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true,
+          "tampered": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_WRONG_CURRENCY",
+      "elapsed_ms": 3,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "PAYMENT_CHARGED",
+      "infection_detail": "charged in USD instead of EUR",
+      "propagation_depth": 6,
+      "last_known_well": "SHIPPING_QUOTED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-12",
+      "detected_by": "checks",
+      "failed_checks": [
+        "charge_total"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": false,
+          "detail": "charged 49.66 USD, expected 49.66 EUR"
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: charge_total",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.344610142Z",
+          "detail": "order af8feebd-136c-4fbb-a7ac-bb7b98e07e73",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.345117174Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.345436231Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.345947934Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.346590049Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.347175218Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.34744115Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.347716291Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.348081066Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.34808669Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.348094528Z",
+          "detail": "order af8feebd-136c-4fbb-a7ac-bb7b98e07e73 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true,
+          "tampered": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_ITEM_DROPPED",
+      "elapsed_ms": 2,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "CART_LOADED",
+      "infection_detail": "cart item 66VCHSJNUP dropped from the order",
+      "propagation_depth": 10,
+      "last_known_well": "TASK_START",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-13",
+      "detected_by": "checks",
+      "failed_checks": [
+        "items_match_cart"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": false,
+          "detail": "cart had map[66VCHSJNUP:2 OLJCESPC7Z:1], order has map[OLJCESPC7Z:1]"
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: items_match_cart",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.350296612Z",
+          "detail": "order 6a678741-aa8c-464a-923f-b2d024ff0576",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.350908532Z",
+          "infected": true
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.351135678Z",
+          "infected": true
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.351380676Z",
+          "infected": true
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.351708322Z",
+          "infected": true
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.35217692Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.352444741Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.352642599Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.352958656Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.352964049Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.352972436Z",
+          "detail": "order 6a678741-aa8c-464a-923f-b2d024ff0576 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true,
+          "tampered": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_DUPLICATE_ITEM",
+      "elapsed_ms": 3,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "CART_LOADED",
+      "infection_detail": "cart item OLJCESPC7Z counted twice",
+      "propagation_depth": 10,
+      "last_known_well": "TASK_START",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-14",
+      "detected_by": "checks",
+      "failed_checks": [
+        "items_match_cart"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": false,
+          "detail": "cart had map[66VCHSJNUP:2 OLJCESPC7Z:1], order has map[66VCHSJNUP:2 OLJCESPC7Z:2]"
+        },
+        {
+          "rule": "ship_address",
+          "pass": true
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: items_match_cart",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.355012353Z",
+          "detail": "order d7135d9b-636e-41bd-983b-032af63a22cf",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.355733337Z",
+          "infected": true
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.355929596Z",
+          "infected": true
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.356727429Z",
+          "infected": true
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.357407324Z",
+          "infected": true
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.357909435Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.358220795Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.358436584Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.35879397Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.358801857Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.358812897Z",
+          "detail": "order d7135d9b-636e-41bd-983b-032af63a22cf accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true,
+          "tampered": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "fault_mode": "BL_WRONG_ADDRESS",
+      "elapsed_ms": 2,
+      "steps_reached": [
+        "TASK_START",
+        "CART_LOADED",
+        "PRODUCTS_LOADED",
+        "PRICES_CONVERTED",
+        "SHIPPING_QUOTED",
+        "PAYMENT_CHARGED",
+        "ORDER_SHIPPED",
+        "CART_EMPTIED",
+        "CONFIRMATION_SENT",
+        "ORDER_VERIFIED",
+        "FINAL_ANSWER"
+      ],
+      "steps_lost": [],
+      "infection_point": "ORDER_SHIPPED",
+      "infection_detail": "shipped to New York, NY 10001 instead of the customer's address",
+      "propagation_depth": 5,
+      "last_known_well": "PAYMENT_CHARGED",
+      "order_accepted": true,
+      "tracking_id": "TRK-MOCK-15",
+      "detected_by": "checks",
+      "failed_checks": [
+        "ship_address"
+      ],
+      "checks": [
+        {
+          "rule": "valid_products",
+          "pass": true
+        },
+        {
+          "rule": "charge_total",
+          "pass": true
+        },
+        {
+          "rule": "paid_once",
+          "pass": true
+        },
+        {
+          "rule": "shipped_once",
+          "pass": true
+        },
+        {
+          "rule": "cart_emptied",
+          "pass": true
+        },
+        {
+          "rule": "confirmation",
+          "pass": true
+        },
+        {
+          "rule": "items_match_cart",
+          "pass": true
+        },
+        {
+          "rule": "ship_address",
+          "pass": false,
+          "detail": "shipped to 1600 Amphitheatre Parkway, New York 10001; customer is at 1600 Amphitheatre Parkway, Mountain View 94043"
+        },
+        {
+          "rule": "paid_before_ship",
+          "pass": true
+        }
+      ],
+      "outcome": "order accepted; correctness checks failed: ship_address",
+      "lkw": [
+        {
+          "step": "TASK_START",
+          "ts": "2026-10-28T01:19:21.361619037Z",
+          "detail": "order 37dedf82-6948-4fca-a7a2-a2b65b158f75",
+          "infected": false
+        },
+        {
+          "step": "CART_LOADED",
+          "ts": "2026-10-28T01:19:21.362193219Z",
+          "infected": false
+        },
+        {
+          "step": "PRODUCTS_LOADED",
+          "ts": "2026-10-28T01:19:21.362411851Z",
+          "infected": false
+        },
+        {
+          "step": "PRICES_CONVERTED",
+          "ts": "2026-10-28T01:19:21.362855199Z",
+          "infected": false
+        },
+        {
+          "step": "SHIPPING_QUOTED",
+          "ts": "2026-10-28T01:19:21.36333871Z",
+          "infected": false
+        },
+        {
+          "step": "PAYMENT_CHARGED",
+          "ts": "2026-10-28T01:19:21.363701119Z",
+          "infected": false
+        },
+        {
+          "step": "ORDER_SHIPPED",
+          "ts": "2026-10-28T01:19:21.363923731Z",
+          "infected": true
+        },
+        {
+          "step": "CART_EMPTIED",
+          "ts": "2026-10-28T01:19:21.364063944Z",
+          "infected": true
+        },
+        {
+          "step": "CONFIRMATION_SENT",
+          "ts": "2026-10-28T01:19:21.364393095Z",
+          "infected": true
+        },
+        {
+          "step": "ORDER_VERIFIED",
+          "ts": "2026-10-28T01:19:21.364411189Z",
+          "infected": true
+        },
+        {
+          "step": "FINAL_ANSWER",
+          "ts": "2026-10-28T01:19:21.364421478Z",
+          "detail": "order 37dedf82-6948-4fca-a7a2-a2b65b158f75 accepted",
+          "infected": true
+        }
+      ],
+      "trace": [
+        {
+          "tool": "get_cart",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "get_product",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "quote_shipping",
+          "ok": true
+        },
+        {
+          "tool": "convert_currency",
+          "ok": true
+        },
+        {
+          "tool": "charge_card",
+          "ok": true
+        },
+        {
+          "tool": "ship_order",
+          "ok": true,
+          "tampered": true
+        },
+        {
+          "tool": "empty_cart",
+          "ok": true
+        },
+        {
+          "tool": "send_order_confirmation",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+--- a/index.html	2026-11-01 20:49:28.102074531 +0000
++++ b/index.html	2026-11-01 20:49:28.104159078 +0000
+@@ -234,6 +234,67 @@
+ }
+ 
+ let recData = {}, recTimer;
++// ── automated campaign box (same code in the recommender page and the FaultLab dashboard tab) ──
++// base: "api/" on the recommender page, "api/recommender/" in the dashboard
++function campaignUI(el, base, services) {
++  const opts = services.map(s => `<option>${esc(s)}</option>`).join("");
++  el.innerHTML = `<section class="svc"><header><b>Automated campaign</b>
++      <span class="meta">the recommender picks the faults, runs them on the agent's test runner, checks the result and re-ranks</span></header>
++    <div class="bar" style="padding:.6rem .8rem 0">
++      <select id="cSvc">${opts}</select>
++      <select id="cStrat"><option value="llm">LLM picks</option><option value="rules">rules pick</option><option value="all">run all (manual baseline)</option></select>
++      <label class="msg">budget <input id="cBudget" type="number" min="1" max="15" value="4" style="width:3.5rem"></label>
++      <label class="msg">rounds <input id="cRounds" type="number" min="1" max="5" value="2" style="width:3rem"></label>
++      <button class="primary" id="cRun">Run campaign</button>
++      <span class="msg" id="cStatus"></span></div>
++    <div id="cOut" style="padding:0 .8rem .6rem"></div>
++    <details style="padding:0 .8rem .6rem"><summary>Campaign log</summary><pre id="cLog">(no campaign yet)</pre></details></section>`;
++  let t = null;
++  const q = s => el.querySelector(s);
++  const yn = v => v === true ? "✓" : v === false ? "✗" : "–";
++  const draw = c => {
++    if (!c) { q("#cOut").innerHTML = `<p class="msg">No campaign yet.</p>`; return; }
++    const sc = c.score, cp = c.canary_pick || {};
++    q("#cOut").innerHTML = `<p class="msg">${esc(c.service)} · ${esc(c.strategy)} · ${esc(c.finished_at)} · ${c.elapsed_s}s ·
++        ${sc.faults_run} faults run, <b>${sc.caught}</b> caught, <b style="color:var(--bad,#b91c1c)">${sc.gaps.length}</b> gap(s)
++        ${sc.gaps.length ? "(" + esc(sc.gaps.join(", ")) + ")" : ""} · control ${sc.control_clean ? "clean" : "NOT clean"}
++        · predictions: infection point ${sc.hypothesis_infection_point_acc ?? "–"}, detection ${sc.hypothesis_detection_acc ?? "–"}
++        · coverage ${c.coverage.run_after}/${c.coverage.modes} modes</p>
++      <p class="msg">Canary rollback pick: <code>${esc(cp.fault_mode)}</code>. ${esc(cp.why || "")}
++        ${cp.avoid && cp.avoid.length ? " Avoid (not caught): " + esc(cp.avoid.join(", ")) : ""}</p>` +
++      c.rounds.map(r => `<table class="rt" style="table-layout:fixed"><colgroup><col style="width:17%"><col style="width:25%"><col style="width:19%"><col style="width:19%"><col style="width:7%"><col style="width:13%"></colgroup><thead><tr><th>Round ${r.round}</th><th>Why</th><th>Expected</th><th>Actual</th><th>IP / det.</th><th>Verdict</th></tr></thead><tbody>
++        ${r.results.map(j => { const a = j.actual || {}; return `<tr>
++          <td><code>${esc(j.mode)}</code><br><span class="msg">${esc(j.source)}</span></td>
++          <td>${esc(j.why)}</td>
++          <td>${esc(j.expect_infection_point || "?")}<br><span class="msg">${esc(j.expect_caught_by == null ? "?" : (j.expect_caught_by.join(", ") || "not caught"))}</span></td>
++          <td>${esc(a.infection_point || "-")}<br><span class="msg">${esc((a.caught_by || []).join(", ") || "nothing")}</span></td>
++          <td>${yn(j.infection_point_ok)} / ${yn(j.detection_ok)}</td>
++          <td${/GAP|FALSE/.test(j.verdict) ? ' style="color:var(--bad,#b91c1c);font-weight:600"' : ""}>${esc(j.verdict)}</td></tr>`; }).join("")}
++        </tbody></table>`).join("");
++  };
++  const refresh = async () => {
++    clearTimeout(t);
++    if (!el.isConnected) return;
++    try {
++      const s = await (await fetch(base + "campaign")).json();
++      q("#cStatus").textContent = s.running ? "Running…" : s.error ? "Failed: " + s.error : s.finished_at ? "Idle" : "";
++      q("#cLog").textContent = s.log || "(no campaign yet)";
++      q("#cRun").disabled = s.running;
++      draw(s.latest);
++      if (s.running) t = setTimeout(refresh, 2000);
++    } catch (e) { q("#cStatus").textContent = e.message; }
++  };
++  q("#cRun").onclick = async () => {
++    const body = { service: q("#cSvc").value, strategy: q("#cStrat").value,
++                   budget: +q("#cBudget").value || 4, rounds: +q("#cRounds").value || 1 };
++    const r = await (await fetch(base + "campaign", { method: "POST", headers: {"Content-Type": "application/json"},
++                                                    body: JSON.stringify(body) })).json();
++    q("#cStatus").textContent = r.status === "busy" ? "A campaign is already running" : r.detail || "Started";
++    t = setTimeout(refresh, 500);
++  };
++  refresh();
++}
++
+ async function renderRecPanel() {
+   $("#panel").innerHTML = `
+     <div class="bar">
+@@ -242,6 +303,7 @@
+       <label class="msg"><input type="checkbox" id="hideExisting" checked> hide modes that already exist</label>
+       <span class="msg" id="status"></span>
+     </div>
++    <div id="campaign"></div>
+     <div id="recs"><p class="msg">Loading…</p></div>
+     <details><summary>Scan log</summary><pre id="log">(no scan yet)</pre></details>`;
+   const draw = () => renderRecs($("#recs"), recData, $("#hideExisting").checked);
+@@ -269,6 +331,8 @@
+   $("#scan").onclick = () => scan(true);
+   $("#scanRules").onclick = () => scan(false);
+   $("#hideExisting").onchange = draw;
++  api("api/recommender/services").then(d => campaignUI($("#campaign"), "api/recommender/",
++    Object.keys(d.services).filter(k => d.services[k].agent))).catch(() => {});
+   refreshRecs();
+ }
+ 

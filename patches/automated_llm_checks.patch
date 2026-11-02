@@ -1,0 +1,58 @@
+--- a/canary_rollout.yml	2026-11-01 20:47:49.505082750 +0000
++++ b/canary_rollout.yml	2026-11-01 20:47:49.521572719 +0000
+@@ -26,12 +26,13 @@
+         required: false
+         default: 'ghcr.io/pauriccarr/checkoutservice-agent:v6-faults'
+       fault_mode:
+-        description: 'Fault to inject for the rollback demo (NONE = normal migration)'
++        description: 'Fault to inject for the rollback demo (NONE = normal migration, AUTO = the fault recommender picks)'
+         required: true
+         default: 'NONE'
+         type: choice
+         options:
+           - NONE
++          - AUTO
+           - BL_WRONG_TOTAL
+           - BL_WRONG_CURRENCY
+           - BL_SKIP_PAYMENT
+@@ -166,12 +167,38 @@
+           fi
+           kubectl get pods -l 'app in (frontend,checkoutservice)'
+ 
++      # AUTO: ask the in-cluster fault recommender which fault should trip the rollback.
++      # It picks from the agent's own FaultLab evidence (a caught BL_* fault that fails a money check).
++      - name: Pick the fault
++        id: fault
++        env:
++          FAULT_MODE: ${{ inputs.fault_mode }}
++        run: |
++          f="$FAULT_MODE"
++          if [ "$f" = "AUTO" ]; then
++            pick=$(kubectl exec deploy/fault-recommender -- python -c "import httpx,json;print(json.dumps(httpx.get('http://localhost:8080/api/canary-fault/checkoutservice-agent',timeout=60).json()))" 2>/dev/null || true)
++            f=$(echo "$pick" | jq -r '.fault_mode // empty' 2>/dev/null || true)
++            if [ -z "$f" ] || [ "$f" = "NONE" ]; then
++              echo "::warning title=No recommendation::fault-recommender gave no pick (not deployed, or no campaign/results yet). Using BL_WRONG_TOTAL."
++              f=BL_WRONG_TOTAL
++            else
++              {
++                echo "**Fault picked by the recommender:** \`$f\`"
++                echo
++                echo "$pick" | jq -r '"> " + .why + "\n>\n> Alternatives: " + (.alternatives | join(", ")) + ". Not caught today (would not roll back): " + ((.avoid | join(", ")) // "none") + "."'
++                echo
++              } >> "$GITHUB_STEP_SUMMARY"
++            fi
++          fi
++          echo "Fault for this run: $f"
++          echo "mode=$f" >> "$GITHUB_OUTPUT"
++
+       # ---------------- 4. Traffic steps, each one gated on the metrics ----------------
+       - name: Move checkout traffic to the agent
+         env:
+           WAIT_MINUTES: ${{ inputs.wait_minutes }}
+           MIN_AGENT_REQUESTS: ${{ inputs.min_agent_requests }}
+-          FAULT_MODE: ${{ inputs.fault_mode }}
++          FAULT_MODE: ${{ steps.fault.outputs.mode }}
+           FAULT_AT: ${{ inputs.fault_at_percent }}
+         run: |
+           # Prometheus, reached through a port-forward.
+
