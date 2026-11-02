@@ -1144,6 +1144,16 @@ metadata:
   name: adservice
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: faultlab-dashboard
+data:
+  AGENTS: |
+    {
+      "checkout": "http://checkoutservice-agent:8080"
+    }
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: fault-recommender
