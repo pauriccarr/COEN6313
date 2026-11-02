@@ -1232,7 +1232,7 @@ spec:
         - name: OLLAMA_SERVICE_URL        # Ollama runs in the shop's namespace on the new cluster
           value: "http://ollama:11434"
         - name: OLLAMA_MODEL
-          value: "llama3.1"
+          value: "llama3.2:1b"
         - name: AGENT_RUN_TIMEOUT         # seconds a campaign waits for one agent run (live runner: minutes per mode)
           value: "3600"
         - name: SCAN_ON_START
